@@ -23,7 +23,8 @@ import matplotlib.patches as mpatches
 import numpy as np
 from pathlib import Path
 from pyannote.core import Segment, Annotation, Timeline
-from pyannote.metrics.diarization import DiarizationErrorRate, DiarizationPurity, DiarizationCoverage
+from pyannote.metrics.diarization import DiarizationErrorRate, DiarizationPurity, DiarizationCoverage, JaccardErrorRate
+from pyannote.metrics.segmentation import SegmentationPrecision, SegmentationRecall
 from tabulate import tabulate
 import warnings
 
@@ -117,7 +118,7 @@ def get_hardware_stats(model_dir):
         return global_stats, file_stats
     except: return None, {}
 
-def evaluate_model_comprehensive(model_dir, gold_annotations, collar, hw_file_stats, errata_dict):
+def evaluate_model_comprehensive(model_dir, gold_annotations, collar, hw_file_stats, errata_dict, boundary_tolerance=0.250):
     rttm_files = glob.glob(os.path.join(model_dir, "*.rttm"))
     system_annotations = {}
     for f in rttm_files:
@@ -125,11 +126,20 @@ def evaluate_model_comprehensive(model_dir, gold_annotations, collar, hw_file_st
         system_annotations[fname] = load_rttm(f).get(fname, Annotation(uri=fname))
 
     metric_der = DiarizationErrorRate(collar=collar, skip_overlap=SKIP_OVERLAP)
+    metric_jer = JaccardErrorRate(collar=collar, skip_overlap=SKIP_OVERLAP)
     metric_purity = DiarizationPurity(collar=collar, skip_overlap=SKIP_OVERLAP)
     metric_coverage = DiarizationCoverage(collar=collar, skip_overlap=SKIP_OVERLAP)
+    metric_b_prec = SegmentationPrecision(tolerance=boundary_tolerance)
+    metric_b_rec = SegmentationRecall(tolerance=boundary_tolerance)
     
     file_results = []
-    acc = {'total':0, 'error':0, 'p_num':0, 'p_den':0, 'c_num':0, 'c_den':0}
+    acc = {
+        'total': 0, 'error': 0,
+        'p_num': 0, 'p_den': 0,
+        'c_num': 0, 'c_den': 0,
+        'jer_num': 0, 'jer_den': 0,
+        'bp_num': 0, 'br_num': 0, 'b_den': 0,
+    }
     
     for fid, ref in gold_annotations.items():
         hw = hw_file_stats.get(fid, {})
@@ -154,8 +164,13 @@ def evaluate_model_comprehensive(model_dir, gold_annotations, collar, hw_file_st
         if has_output:
             hyp = system_annotations[fid]
             stats = metric_der(ref, hyp, detailed=True, uem=uem)
+            jer = metric_jer(ref, hyp, uem=uem)
             purity = metric_purity(ref, hyp, uem=uem)
             coverage = metric_coverage(ref, hyp, uem=uem)
+
+            b_p = metric_b_prec(ref, hyp, uem=uem)
+            b_r = metric_b_rec(ref, hyp, uem=uem)
+            b_f1 = (2 * b_p * b_r / (b_p + b_r)) if (b_p + b_r) > 0 else 0.0
             
             total = stats.get('total', 0.0)
             miss = stats.get('missed detection', 0.0)
@@ -164,6 +179,12 @@ def evaluate_model_comprehensive(model_dir, gold_annotations, collar, hw_file_st
             
             acc['total'] += total
             acc['error'] += (miss + fa + conf)
+            acc['jer_num'] += jer * total
+            acc['jer_den'] += total
+
+            acc['bp_num'] += b_p * total
+            acc['br_num'] += b_r * total
+            acc['b_den'] += total
             
             hyp_eval = hyp.crop(uem)
             ref_eval = ref.crop(uem)
@@ -176,9 +197,13 @@ def evaluate_model_comprehensive(model_dir, gold_annotations, collar, hw_file_st
 
             res_entry.update({
                 'DER': (stats.get('diarization error rate', 0.0)) * 100 if total > 0 else 0.0,
+                'JER': jer * 100,
                 'Miss': (miss / total * 100) if total > 0 else 0.0,
                 'FA': (fa / total * 100) if total > 0 else 0.0,
                 'Conf': (conf / total * 100) if total > 0 else 0.0,
+                'B-P': b_p * 100,
+                'B-R': b_r * 100,
+                'B-F1': b_f1 * 100,
                 'Purity': purity * 100,
                 'Cover': coverage * 100,
                 'Total Speech': total
@@ -190,9 +215,12 @@ def evaluate_model_comprehensive(model_dir, gold_annotations, collar, hw_file_st
             acc['total'] += ref_speech_duration
             acc['error'] += ref_speech_duration 
             acc['c_den'] += ref_speech_duration
+            acc['jer_num'] += 1.0 * ref_speech_duration
+            acc['jer_den'] += ref_speech_duration
             
             res_entry.update({
                 'Status': 'FAIL', 'DER': 100.0, 'Miss': 100.0, 'FA': 0.0, 'Conf': 0.0,
+                'JER': 100.0, 'B-P': 0.0, 'B-R': 0.0, 'B-F1': 0.0,
                 'Purity': 0.0, 'Cover': 0.0, 'Total Speech': ref_speech_duration
             })
             if hw.get('error'): res_entry['Status'] = "OOM/ERR"
@@ -202,8 +230,21 @@ def evaluate_model_comprehensive(model_dir, gold_annotations, collar, hw_file_st
     g_der = (acc['error'] / acc['total'] * 100) if acc['total'] > 0 else 0.0
     g_pur = (acc['p_num'] / acc['p_den'] * 100) if acc['p_den'] > 0 else 0.0
     g_cov = (acc['c_num'] / acc['c_den'] * 100) if acc['c_den'] > 0 else 0.0
+    g_jer = (acc['jer_num'] / acc['jer_den'] * 100) if acc['jer_den'] > 0 else 0.0
+    g_bp = (acc['bp_num'] / acc['b_den'] * 100) if acc['b_den'] > 0 else 0.0
+    g_br = (acc['br_num'] / acc['b_den'] * 100) if acc['b_den'] > 0 else 0.0
+    g_bf1 = (2 * g_bp * g_br / (g_bp + g_br)) if (g_bp + g_br) > 0 else 0.0
     
-    return {'der': g_der, 'purity': g_pur, 'coverage': g_cov, 'files': file_results}
+    return {
+        'der': g_der,
+        'jer': g_jer,
+        'b_p': g_bp,
+        'b_r': g_br,
+        'b_f1': g_bf1,
+        'purity': g_pur,
+        'coverage': g_cov,
+        'files': file_results
+    }
 
 def find_extreme_segments(ref, systems_dict, window_duration=60.0, step=30.0, min_speech=15.0, eval_boundary=None):
     """
@@ -396,6 +437,53 @@ def highlight_best(df, min_cols=[], max_cols=[], formatters={}):
         df_out[col] = df[col].apply(apply_fmt)
     return df_out
 
+def snap_to_collar_settings(requested, settings=COLLAR_SETTINGS):
+    """Pick nearest collar from settings (float-safe)."""
+    return min(settings, key=lambda c: abs(float(c) - float(requested)))
+
+def collect_models_with_ok_status(deep_dive_data, domain_collar):
+    names = set()
+    for _, per in deep_dive_data.items():
+        md = per.get(domain_collar, {})
+        for m_name, st in md.items():
+            if st.get('Status') == 'OK':
+                names.add(m_name)
+    return sorted(names)
+
+def build_domain_metric_rows(deep_dive_data, meta_dict, domain_collar, metric_col):
+    rows = []
+    for fid, per in deep_dive_data.items():
+        md = per.get(domain_collar, {})
+        domain = meta_dict.get(fid, {}).get('Domain', 'N/A')
+        for m_name, stats in md.items():
+            if stats.get('Status') == 'OK' and metric_col in stats:
+                rows.append({'Domain': domain, 'Model': m_name, metric_col: stats[metric_col]})
+    return rows
+
+def format_domain_pivot_table(pivot_renamed, letter_cols, maximize=False):
+    """Bold best model per domain row. `pivot_renamed` has Domain + letter columns + AVG."""
+    out = pivot_renamed.copy()
+    for idx, row in out.iterrows():
+        vals = pd.to_numeric(row[letter_cols], errors='coerce')
+        finite = vals[np.isfinite(vals)]
+        if finite.empty:
+            continue
+        best = float(finite.max() if maximize else finite.min())
+        for c in letter_cols:
+            try:
+                v = float(row[c])
+                if np.isfinite(v) and v == best:
+                    out.at[idx, c] = f"**{v:.2f}**"
+                elif np.isfinite(v):
+                    out.at[idx, c] = f"{v:.2f}"
+            except (TypeError, ValueError):
+                pass
+        try:
+            out.at[idx, "AVG"] = f"{float(row['AVG']):.2f}"
+        except (TypeError, ValueError):
+            pass
+    return tabulate(out, headers="keys", tablefmt="github", showindex=False)
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--gold", required=True)
@@ -403,7 +491,16 @@ def main():
     parser.add_argument("--metadata", help="Path to TSV")
     parser.add_argument("--errata", default="DATASET_ERRATA.json")
     parser.add_argument("--output", required=True)
+    parser.add_argument("--boundary_tolerance", type=float, default=0.250, help="Boundary tolerance (seconds) for segmentation precision/recall (default: 0.250)")
+    parser.add_argument(
+        "--analysis_collar",
+        type=float,
+        default=0.25,
+        help="Collar (seconds) used for domain-level boxplots and domain comparison tables; snapped to nearest value in COLLAR_SETTINGS (default: 0.25)",
+    )
     args = parser.parse_args()
+
+    domain_collar = snap_to_collar_settings(args.analysis_collar)
 
     os.makedirs(args.output, exist_ok=True)
     gold_annots = load_rttm(args.gold)
@@ -418,7 +515,7 @@ def main():
     model_dirs = [f.path for f in os.scandir(args.results_dir) if f.is_dir()]
 
     summary_data = []
-    deep_dive_data = {fid: {} for fid in gold_annots.keys()}
+    deep_dive_data = {fid: {c: {} for c in COLLAR_SETTINGS} for fid in gold_annots.keys()}
     model_links = {}
 
     print(f"Processing {len(model_dirs)} models...", flush=True)
@@ -432,12 +529,21 @@ def main():
         model_links[display_name] = hw_global['model_name']
 
         for collar in COLLAR_SETTINGS:
-            res = evaluate_model_comprehensive(model_dir, gold_annots, collar, hw_per_file, errata_dict)
+            res = evaluate_model_comprehensive(
+                model_dir,
+                gold_annots,
+                collar,
+                hw_per_file,
+                errata_dict,
+                boundary_tolerance=args.boundary_tolerance,
+            )
             
             ok_count = sum(1 for f in res['files'] if f['Status'] == 'OK')
             summary_data.append({
                 "Model": display_name, "Collar": collar,
-                "DER": res['der'], "Purity": res['purity'], "Cover": res['coverage'],
+                "DER": res['der'], "JER": res['jer'],
+                "B-P": res['b_p'], "B-R": res['b_r'], "B-F1": res['b_f1'],
+                "Purity": res['purity'], "Cover": res['coverage'],
                 "Miss": sum(f.get('Miss', 0) for f in res['files'] if f['Status']=='OK') / ok_count if ok_count else 0,
                 "FA": sum(f.get('FA', 0) for f in res['files'] if f['Status']=='OK') / ok_count if ok_count else 0,
                 "Conf": sum(f.get('Conf', 0) for f in res['files'] if f['Status']=='OK') / ok_count if ok_count else 0,
@@ -445,9 +551,8 @@ def main():
                 "Completed": f"{ok_count}/{len(gold_annots)}"
             })
 
-            if collar == 0.25:
-                for fstat in res['files']:
-                    deep_dive_data[fstat['File ID']][display_name] = fstat
+            for fstat in res['files']:
+                deep_dive_data[fstat['File ID']][collar][display_name] = fstat
 
     df_sum = pd.DataFrame(summary_data)
 
@@ -463,58 +568,79 @@ def main():
     plt.savefig(os.path.join(args.output, "plot_der_comparison.png"))
     plt.close()
 
-    all_file_rows = []
-    for fid, models_data in deep_dive_data.items():
-        domain = meta_dict.get(fid, {}).get('Domain', 'N/A')
-        for m_name, stats in models_data.items():
-            if stats['Status'] == 'OK':
-                all_file_rows.append({'Domain': domain, 'DER': stats['DER'], 'Model': m_name})
-    
-    df_dom = pd.DataFrame()
-    domain_table_md = ""
-    if all_file_rows:
-        df_dom = pd.DataFrame(all_file_rows)
-        plt.figure(figsize=(14, 6))
-        sns.boxplot(data=df_dom, x="Domain", y="DER", hue="Model")
-        plt.title("DER Distribution by Domain")
-        plt.xticks(rotation=45, ha='right')
-        plt.legend(bbox_to_anchor=(1.01, 1), loc='upper left', borderaxespad=0.)
-        plt.tight_layout()
-        plt.savefig(os.path.join(args.output, "plot_domain_analysis.png"), bbox_inches='tight')
-        plt.close()
+    plt.figure(figsize=(12, 6))
+    sns.barplot(data=df_sum, x="Model", y="JER", hue="Collar", palette="viridis")
+    plt.title("Impact of Collar on JER")
+    plt.ylabel("JER (%)")
+    plt.xticks(rotation=45, ha='right')
+    plt.tight_layout()
+    plt.savefig(os.path.join(args.output, "plot_jer_comparison.png"))
+    plt.close()
 
-        pivot_dom = df_dom.pivot_table(index="Domain", columns="Model", values="DER", aggfunc="mean")
-        pivot_dom["AVG"] = pivot_dom.mean(axis=1)
-        
-        m_names = [c for c in pivot_dom.columns if c != "AVG"]
-        col_map = {m: chr(65+i) for i, m in enumerate(m_names)}
-        
-        legend_txt = "\n".join([f"* **{col_map[m]}**: {m}" for m in m_names])
-        
-        pivot_dom = pivot_dom.rename(columns=col_map).reset_index()
-        
-        for idx, row in pivot_dom.iterrows():
-            vals = pd.to_numeric(row[list(col_map.values())], errors='coerce')
-            min_v = vals.min()
-            for c in col_map.values():
-                try:
-                    if float(row[c]) == min_v: pivot_dom.at[idx, c] = f"**{float(row[c]):.2f}**"
-                    else: pivot_dom.at[idx, c] = f"{float(row[c]):.2f}"
-                except: pass
-            pivot_dom.at[idx, "AVG"] = f"{float(row['AVG']):.2f}"
-        
-        domain_table_md = tabulate(pivot_dom, headers="keys", tablefmt="github", showindex=False) + "\n\n" + legend_txt
+    plt.figure(figsize=(12, 6))
+    sns.barplot(data=df_sum, x="Model", y="B-F1", hue="Collar", palette="viridis")
+    plt.title("Impact of Collar on Boundary F1")
+    plt.ylabel("Boundary F1 (%)")
+    plt.xticks(rotation=45, ha='right')
+    plt.tight_layout()
+    plt.savefig(os.path.join(args.output, "plot_boundary_f1_comparison.png"))
+    plt.close()
+
+    m_names = collect_models_with_ok_status(deep_dive_data, domain_collar)
+    col_map = {m: chr(65 + i) for i, m in enumerate(m_names)}
+    letter_cols = [col_map[m] for m in m_names]
+    domain_legend_lines = [f"* **{col_map[m]}**: {m}" for m in m_names]
+    domain_legend_md = "\n".join(domain_legend_lines) if domain_legend_lines else ""
+
+    domain_tables = {"DER": "", "JER": "", "B-F1": ""}
+    domain_plot_files = {}
+    domain_metric_specs = [
+        ("DER", "DER", "plot_domain_analysis.png", False),
+        ("JER", "JER", "plot_domain_analysis_jer.png", False),
+        ("B-F1", "Boundary F1", "plot_domain_analysis_bf1.png", True),
+    ]
+
+    if m_names:
+        for metric_col, plot_label, plot_fname, maximize in domain_metric_specs:
+            rows = build_domain_metric_rows(deep_dive_data, meta_dict, domain_collar, metric_col)
+            if not rows:
+                continue
+            domain_plot_files[metric_col] = plot_fname
+            df_m = pd.DataFrame(rows)
+            plt.figure(figsize=(14, 6))
+            sns.boxplot(data=df_m, x="Domain", y=metric_col, hue="Model")
+            plt.title(f"{plot_label} distribution by domain (collar {domain_collar}s)")
+            plt.ylabel(f"{metric_col} (%)" if metric_col != "B-F1" else "Boundary F1 (%)")
+            plt.xticks(rotation=45, ha='right')
+            plt.legend(bbox_to_anchor=(1.01, 1), loc='upper left', borderaxespad=0.)
+            plt.tight_layout()
+            plt.savefig(os.path.join(args.output, plot_fname), bbox_inches='tight')
+            plt.close()
+
+            pivot_dom = df_m.pivot_table(index="Domain", columns="Model", values=metric_col, aggfunc="mean")
+            pivot_dom = pivot_dom.reindex(columns=m_names)
+            pivot_dom["AVG"] = pivot_dom.mean(axis=1, skipna=True)
+            pivot_named = pivot_dom.rename(columns=col_map).reset_index()
+            domain_tables[metric_col] = format_domain_pivot_table(
+                pivot_named, letter_cols, maximize=maximize
+            )
 
     print("Writing report...", flush=True)
     formatters = {
         "RTF": fmt_rtf,
         "VRAM": fmt_vram,
         "DER": lambda x: f"{x:.2f}",
+        "JER": lambda x: f"{x:.2f}",
         "Miss": lambda x: f"{x:.2f}",
         "FA": lambda x: f"{x:.2f}",
         "Conf": lambda x: f"{x:.2f}",
+        "B-P": lambda x: f"{x:.2f}",
+        "B-R": lambda x: f"{x:.2f}",
+        "B-F1": lambda x: f"{x:.2f}",
         "Purity": lambda x: f"{x:.2f}",
-        "Cover": lambda x: f"{x:.2f}"
+        "Cover": lambda x: f"{x:.2f}",
+        "Pur": lambda x: f"{x:.2f}",
+        "Cov": lambda x: f"{x:.2f}",
     }
 
     with open(os.path.join(args.output, "ROG_Dia_Benchmark_Report.md"), "w") as f:
@@ -531,14 +657,21 @@ def main():
         formatters["VRAM (GB)"] = fmt_vram
         
         df_lead = df_lead.sort_values("DER")
-        df_lead = highlight_best(df_lead, min_cols=["DER", "Miss", "FA", "Conf", "RTF", "VRAM (GB)"], max_cols=["Purity", "Cover"], formatters=formatters)
+        df_lead = highlight_best(
+            df_lead,
+            min_cols=["DER", "JER", "Miss", "FA", "Conf", "RTF", "VRAM (GB)"],
+            max_cols=["B-P", "B-R", "B-F1", "Purity", "Cover"],
+            formatters=formatters,
+        )
         
         f.write(tabulate(df_lead, headers="keys", tablefmt="github", showindex=False))
         f.write("\n\n### Terminology & Methodology\n")
         f.write("* **DER (Diarization Error Rate):** Primary metric. Lower is better. Sum of Missed, False Alarm, and Confusion rates.\n")
+        f.write("* **JER (Jaccard Error Rate):** Speaker-balanced diarization error. Lower is better.\n")
         f.write("* **Miss (%):** Speech present in Gold Standard but missed by the model.\n")
         f.write("* **FA (False Alarm %):** Model predicted speech where Gold Standard is silent.\n")
         f.write("* **Conf (Confusion %):** Speech correctly detected but assigned to the wrong speaker.\n")
+        f.write(f"* **Boundary P/R/F1 (%):** Segmentation boundary precision/recall/F1 using tolerance {args.boundary_tolerance:.3f}s.\n")
         f.write("* **Purity (%):** Evaluates cluster purity. High purity = when a model identifies a speaker, it is consistently the same person.\n")
         f.write("* **Cover (Coverage %):** Evaluates how much of the original speaker's speech was captured under a single hypothesis cluster.\n")
         f.write("* **RTF (Real Time Factor):** Processing time divided by audio length. e.g., `< 0.01` means exceptionally fast processing.\n")
@@ -552,14 +685,64 @@ def main():
             f.write("\n")
 
         f.write("## 4. Visual & Domain Analysis\n")
-        f.write("![DER Comparison](plot_der_comparison.png)\n\n")
-        f.write("![Domain Analysis](plot_domain_analysis.png)\n\n")
-        
-        if domain_table_md:
-            f.write("### Domain Comparison (DER %)\n")
-            f.write("Average DER per domain. **Bold** highlights the best model for each domain.\n\n")
-            f.write(domain_table_md)
-            f.write("\n\n")
+        f.write(
+            "Bar charts compare models across **all** configured collars; domain boxplots and domain tables use a single evaluation collar.\n\n"
+        )
+        if float(domain_collar) != float(args.analysis_collar):
+            f.write(
+                f"* **Domain analysis collar:** `{domain_collar}`s (requested `--analysis_collar {args.analysis_collar}`; snapped to nearest value in `{list(COLLAR_SETTINGS)}`).\n\n"
+            )
+        else:
+            f.write(f"* **Domain analysis collar:** `{domain_collar}`s.\n\n")
+
+        f.write("![DER comparison by collar](plot_der_comparison.png)\n\n")
+        f.write("![JER comparison by collar](plot_jer_comparison.png)\n\n")
+        f.write("![Boundary F1 comparison by collar](plot_boundary_f1_comparison.png)\n\n")
+
+        if m_names:
+            if "DER" in domain_plot_files:
+                f.write(
+                    f"![DER distribution by domain (collar {domain_collar}s)]({domain_plot_files['DER']})\n\n"
+                )
+            if "JER" in domain_plot_files:
+                f.write(
+                    f"![JER distribution by domain (collar {domain_collar}s)]({domain_plot_files['JER']})\n\n"
+                )
+            if "B-F1" in domain_plot_files:
+                f.write(
+                    f"![Boundary F1 distribution by domain (collar {domain_collar}s)]({domain_plot_files['B-F1']})\n\n"
+                )
+
+            if domain_tables.get("DER"):
+                f.write("### Domain Comparison (DER %)\n")
+                f.write(
+                    f"Average DER per domain at collar `{domain_collar}`s. **Bold** highlights the best (lowest) model per domain.\n\n"
+                )
+                f.write(domain_tables["DER"])
+                f.write("\n\n")
+            if domain_tables.get("JER"):
+                f.write("### Domain Comparison (JER %)\n")
+                f.write(
+                    f"Average JER per domain at collar `{domain_collar}`s. **Bold** highlights the best (lowest) model per domain.\n\n"
+                )
+                f.write(domain_tables["JER"])
+                f.write("\n\n")
+            if domain_tables.get("B-F1"):
+                f.write("### Domain Comparison (Boundary F1 %)\n")
+                f.write(
+                    f"Average boundary F1 per domain at collar `{domain_collar}`s (boundary tolerance {args.boundary_tolerance:.3f}s). **Bold** highlights the best (highest) model per domain.\n\n"
+                )
+                f.write(domain_tables["B-F1"])
+                f.write("\n\n")
+
+            if domain_legend_md:
+                f.write("### Domain comparison model legend (shared)\n")
+                f.write(domain_legend_md)
+                f.write("\n\n")
+        else:
+            f.write(
+                "*Domain distribution plots and domain comparison tables are omitted: no models had OK per-file outputs at the selected domain-analysis collar.*\n\n"
+            )
 
         f.write("## 5. Deep Dive: File-by-File Analysis\n")
         f.write("Detailed breakdown for every file. *For metric definitions, see Executive Summary.*\n\n")
@@ -603,23 +786,45 @@ def main():
                     f.write(f"![Worst Segment {fid}](timeline_{fid}_worst.png)\n\n")
 
             # --- Tabela Metrik ---
-            rows = []
-            for m_name, stats in deep_dive_data[fid].items():
-                row = {'Model': m_name}
-                if stats['Status'] == 'OK':
-                    row.update({
-                        'DER': stats['DER'], 'Miss': stats['Miss'], 'FA': stats['FA'],
-                        'Conf': stats['Conf'], 'Pur': stats['Purity'], 'Cov': stats['Cover'],
-                        'VRAM (GB)': stats['VRAM']
-                    })
-                else:
-                    row['Status'] = stats['Status']
-                rows.append(row)
-            
-            if rows:
-                df_f = pd.DataFrame(rows).sort_values("DER")
-                df_f = highlight_best(df_f, min_cols=["DER", "Miss", "FA", "Conf", "VRAM (GB)"], max_cols=["Pur", "Cov"], formatters=formatters)
-                f.write(tabulate(df_f, headers="keys", tablefmt="github", showindex=False))
+            for collar in COLLAR_SETTINGS:
+                collar_data = deep_dive_data[fid].get(collar, {})
+                if not collar_data:
+                    continue
+                f.write(f"#### Metrics (Collar: {collar:.2f}s)\n\n")
+
+                rows = []
+                for m_name, stats in collar_data.items():
+                    row = {'Model': m_name}
+                    if stats.get('Status') == 'OK':
+                        row.update({
+                            'DER': stats.get('DER', np.nan),
+                            'JER': stats.get('JER', np.nan),
+                            'Miss': stats.get('Miss', np.nan),
+                            'FA': stats.get('FA', np.nan),
+                            'Conf': stats.get('Conf', np.nan),
+                            'B-P': stats.get('B-P', np.nan),
+                            'B-R': stats.get('B-R', np.nan),
+                            'B-F1': stats.get('B-F1', np.nan),
+                            'Pur': stats.get('Purity', np.nan),
+                            'Cov': stats.get('Cover', np.nan),
+                            'VRAM (GB)': stats.get('VRAM', np.nan),
+                        })
+                    else:
+                        row.update({'Status': stats.get('Status', 'FAIL'), 'DER': np.nan})
+                    rows.append(row)
+
+                if rows:
+                    df_f = pd.DataFrame(rows)
+                    if "DER" in df_f.columns:
+                        df_f = df_f.sort_values("DER")
+                    df_f = highlight_best(
+                        df_f,
+                        min_cols=["DER", "JER", "Miss", "FA", "Conf", "VRAM (GB)"],
+                        max_cols=["B-P", "B-R", "B-F1", "Pur", "Cov"],
+                        formatters=formatters,
+                    )
+                    f.write(tabulate(df_f, headers="keys", tablefmt="github", showindex=False))
+                    f.write("\n\n")
             f.write("\n\n---\n\n")
 
     try:

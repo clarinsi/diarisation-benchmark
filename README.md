@@ -48,13 +48,16 @@ Check `reports/ROG-Dia_rog-auto-gold-rttm_Report/ROG_Dia_Benchmark_Report.md` fo
 
 The report includes:
 - diarisation error rate (DER), false alarm, missed speech and speaker confusion
+- Jaccard Error Rate (JER) and boundary precision/recall/F1 (boundary tolerance configurable)
 - purity / coverage and per-talk evaluation
 - model-specific latency and real-time factor
 - summarization of all models from configured `results/*/benchmark_metadata.json`
 
 The first iteration uses the existing reference RTTM outputs and computes diarisations with DER as primary metric.
 
-Future metric extensions may include JER, boundary F-score, cluster consistency, and more.
+Additional report controls:
+- `--boundary_tolerance` controls boundary P/R/F1 tolerance window (seconds)
+- `--analysis_collar` controls which collar is used for domain plots and domain comparison tables (snapped to nearest value in `COLLAR_SETTINGS`)
 
 
 
