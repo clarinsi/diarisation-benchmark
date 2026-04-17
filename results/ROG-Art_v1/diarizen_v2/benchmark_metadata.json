@@ -1,0 +1,136 @@
+{
+    "model_name": "BUT-FIT/diarizen-wavlm-large-s80-md-v2",
+    "run_info": {
+        "timestamp": "2026-04-15T23:31:34.573082",
+        "python_version": "3.12.3",
+        "torch_version": "2.10.0",
+        "system": "Linux",
+        "processor": "aarch64",
+        "device_type": "cuda",
+        "gpu_name": "NVIDIA GB10",
+        "gpu_count": 1,
+        "gpu_total_vram_gb": 121.63,
+        "cuda_version": "13.1"
+    },
+    "timings": {
+        "model_load_time_s": 0.9060745239257812,
+        "total_processing_time_s": 5086.267055273056,
+        "total_audio_duration_s": 53254.446530612244,
+        "overall_rtf": 0.0955087769497204,
+        "max_vram_peak_mb": 11225.23388671875
+    },
+    "files": [
+        {
+            "filename": "Rog-Art-J-Gvecg-P500014",
+            "audio_duration_s": 3275.48,
+            "processing_time_s": 309.69660353660583,
+            "rtf": 0.09454999069956337,
+            "peak_vram_mb": 11225.23388671875
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P500016",
+            "audio_duration_s": 1237.64,
+            "processing_time_s": 116.44453883171082,
+            "rtf": 0.09408595296831938,
+            "peak_vram_mb": 11225.23388671875
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P500026",
+            "audio_duration_s": 2426.6797052154193,
+            "processing_time_s": 229.36979222297668,
+            "rtf": 0.09452001091450808,
+            "peak_vram_mb": 11225.23388671875
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P500028",
+            "audio_duration_s": 3299.1198185941043,
+            "processing_time_s": 311.9334046840668,
+            "rtf": 0.09455049280901683,
+            "peak_vram_mb": 11225.23388671875
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P500046",
+            "audio_duration_s": 1632.894784580499,
+            "processing_time_s": 153.67994904518127,
+            "rtf": 0.09411503453644911,
+            "peak_vram_mb": 11225.23388671875
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P500048",
+            "audio_duration_s": 1901.161859410431,
+            "processing_time_s": 179.01421070098877,
+            "rtf": 0.09416042606519723,
+            "peak_vram_mb": 11225.23388671875
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P500054",
+            "audio_duration_s": 2612.9997052154195,
+            "processing_time_s": 246.52181553840637,
+            "rtf": 0.09434437173734114,
+            "peak_vram_mb": 11225.23388671875
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P500063",
+            "audio_duration_s": 2014.9326984126983,
+            "processing_time_s": 189.86375951766968,
+            "rtf": 0.0942283380815838,
+            "peak_vram_mb": 11225.23388671875
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P500064",
+            "audio_duration_s": 3348.938798185941,
+            "processing_time_s": 316.000284910202,
+            "rtf": 0.0943583337746792,
+            "peak_vram_mb": 11225.23388671875
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P580002",
+            "audio_duration_s": 1411.828843537415,
+            "processing_time_s": 133.1751606464386,
+            "rtf": 0.09432812005225853,
+            "peak_vram_mb": 11225.23388671875
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P580003",
+            "audio_duration_s": 1856.6268707482993,
+            "processing_time_s": 174.85511875152588,
+            "rtf": 0.09417892281234293,
+            "peak_vram_mb": 11225.23388671875
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P580009",
+            "audio_duration_s": 1204.2769160997732,
+            "processing_time_s": 112.9615695476532,
+            "rtf": 0.0938003278461035,
+            "peak_vram_mb": 11225.23388671875
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P580023",
+            "audio_duration_s": 1000.8819954648526,
+            "processing_time_s": 93.76253771781921,
+            "rtf": 0.0936799124598818,
+            "peak_vram_mb": 11225.23388671875
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P580041",
+            "audio_duration_s": 1414.1898866213153,
+            "processing_time_s": 132.87490510940552,
+            "rtf": 0.09395831943534899,
+            "peak_vram_mb": 11225.23388671875
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P580047",
+            "audio_duration_s": 1733.5768707482994,
+            "processing_time_s": 162.8931770324707,
+            "rtf": 0.09396363079195777,
+            "peak_vram_mb": 11225.23388671875
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P580051",
+            "audio_duration_s": 22883.217777777776,
+            "processing_time_s": 2223.2202274799347,
+            "rtf": 0.09715505262721119,
+            "peak_vram_mb": 11225.23388671875
+        }
+    ]
+}

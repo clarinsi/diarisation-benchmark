@@ -42,4 +42,4 @@ RUN pip install --no-input \
 
 COPY run_inference.py .
 
-ENTRYPOINT ["python", "run_inference.py"]
+ENTRYPOINT ["python", "-u", "run_inference.py"]

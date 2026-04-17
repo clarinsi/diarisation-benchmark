@@ -48,7 +48,11 @@ def parse_cha_file(cha_path):
 def generate_rttm_from_cha(cha_dir, output_file, merge_threshold, min_duration):
     cha_dir = Path(cha_dir)
     if not cha_dir.exists() or not cha_dir.is_dir():
-        raise SystemExit(f"CHA目录不存在: {cha_dir}")
+        alt_cha_dir = cha_dir / "CCPCL"
+        if alt_cha_dir.exists() and alt_cha_dir.is_dir():
+            cha_dir = alt_cha_dir
+        else:
+            raise SystemExit(f"CHA directory not found: {cha_dir}")
 
     all_files = sorted(cha_dir.glob("*.cha"))
     if not all_files:
@@ -77,7 +81,7 @@ def generate_rttm_from_cha(cha_dir, output_file, merge_threshold, min_duration):
 
 def main():
     parser = argparse.ArgumentParser(description="CCPCL CHA -> RTTM converter")
-    parser.add_argument("--cha_dir", type=str, default="data/raw/CCPCL/CCPCL", help="Directory with .cha files")
+    parser.add_argument("--cha_dir", type=str, default="data/raw/CCPCL", help="Directory with .cha files")
     parser.add_argument("--output_file", type=str, default="data/CHILDES-CCPCL/ref_rttm/ccpcl_gold_standard.rttm")
     parser.add_argument("--merge_threshold", type=float, default=1.0)
     parser.add_argument("--min_duration", type=float, default=0.1)

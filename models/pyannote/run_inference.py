@@ -20,6 +20,8 @@ import datetime
 import soundfile as sf
 from pathlib import Path
 from pyannote.audio import Pipeline
+from pyannote.audio.pipelines.utils.hook import ProgressHook
+
 def fix_permissions(path, uid, gid):
     """Rekurzivno spremeni lastništvo datotek in map."""
     print(f"Fixing permissions for {path} -> {uid}:{gid}...", flush=True)
@@ -64,12 +66,6 @@ def get_system_info(device):
     
     return info
 
-def get_peak_memory_mb():
-    """Vrne največjo porabo GPU pomnilnika v MB od zadnjega reseta."""
-    if torch.cuda.is_available():
-        return torch.cuda.max_memory_allocated() / (1024 * 1024)
-    return 0.0
-
 def get_audio_duration(file_path):
     try:
         with sf.SoundFile(file_path) as f:
@@ -77,6 +73,26 @@ def get_audio_duration(file_path):
     except Exception as e:
         log(f"Warning: Could not get duration via soundfile for {file_path}: {e}")
         return 0.0
+    
+def get_peak_memory_mb():
+    """Vrne največjo porabo GPU pomnilnika v MB od zadnjega reseta."""
+    if torch.cuda.is_available():
+        return torch.cuda.max_memory_allocated() / (1024 * 1024)
+    return 0.0
+
+def save_file_metadata(output_dir, filename, metadata):
+    """Save metadata for a specific file."""
+    json_path = os.path.join(output_dir, f"{filename}_metadata.json")
+    with open(json_path, "w") as f:
+        json.dump(metadata, f, indent=4)
+
+def load_file_metadata(output_dir, filename):
+    """Load metadata for a specific file if it exists."""
+    json_path = os.path.join(output_dir, f"{filename}_metadata.json")
+    if os.path.exists(json_path):
+        with open(json_path, "r") as f:
+            return json.load(f)
+    return None
 
 def run_inference(input_dir, output_dir, hf_token, device="cuda", model_name="pyannote/speaker-diarization-3.1"):
     log(f"--- STARTING BENCHMARK ---")
@@ -144,13 +160,25 @@ def run_inference(input_dir, output_dir, hf_token, device="cuda", model_name="py
         filename = Path(audio_path).stem
         output_rttm_path = os.path.join(output_dir, f"{filename}.rttm")
         
-        # Resetiramo števec pomnilnika pred vsako datoteko, 
-        # da vidimo, koliko specifično ta datoteka porabi.
-        if device == "cuda":
-            torch.cuda.reset_peak_memory_stats()
-
         if os.path.exists(output_rttm_path):
-            log(f"[{i+1}/{len(audio_files)}] Skipping {filename} (already exists)")
+            # Load existing metadata if available
+            existing_meta = load_file_metadata(output_dir, filename)
+            if existing_meta:
+                log(f"[{i+1}/{len(audio_files)}] Skipping {filename} (already exists, loading metadata)")
+                benchmark_stats["files"].append(existing_meta)
+                total_proc_time += existing_meta.get("processing_time_s", 0)
+                total_audio_dur += existing_meta.get("audio_duration_s", 0)
+                if existing_meta.get("peak_vram_mb", 0) > global_max_vram:
+                    global_max_vram = existing_meta["peak_vram_mb"]
+            else:
+                log(f"[{i+1}/{len(audio_files)}] Skipping {filename} (already exists, no metadata available)")
+                # Add a basic entry for tracking
+                basic_meta = {
+                    "filename": filename,
+                    "skipped": True,
+                    "reason": "existing_rttm_no_metadata"
+                }
+                benchmark_stats["files"].append(basic_meta)
             continue
 
         log(f"[{i+1}/{len(audio_files)}] Processing {filename}...")
@@ -158,9 +186,15 @@ def run_inference(input_dir, output_dir, hf_token, device="cuda", model_name="py
         audio_dur = get_audio_duration(audio_path)
         file_start_time = time.time()
         
+        # Resetiramo števec pomnilnika pred vsako datoteko, 
+        # da vidimo, koliko specifično ta datoteka porabi.
+        if device == "cuda":
+            torch.cuda.reset_peak_memory_stats()
+
         try:
             # --- INFERENCE ---
-            result = pipeline(audio_path)
+            with ProgressHook() as hook:
+                result = pipeline(audio_path, hook=hook)
             
             # --- API ADAPTATION ---
             annotation = None
@@ -189,13 +223,18 @@ def run_inference(input_dir, output_dir, hf_token, device="cuda", model_name="py
             total_proc_time += proc_duration
             total_audio_dur += audio_dur
             
-            benchmark_stats["files"].append({
+            file_meta = {
                 "filename": filename,
                 "audio_duration_s": audio_dur,
                 "processing_time_s": proc_duration,
                 "rtf": rtf,
                 "peak_vram_mb": current_peak_mb
-            })
+            }
+            
+            benchmark_stats["files"].append(file_meta)
+            
+            # Save per-file metadata
+            save_file_metadata(output_dir, filename, file_meta)
 
             # Write RTTM
             if hasattr(annotation, "write_rttm"):
@@ -220,10 +259,13 @@ def run_inference(input_dir, output_dir, hf_token, device="cuda", model_name="py
             log(f"ERROR processing {filename}: {e}")
             import traceback
             traceback.print_exc()
-            benchmark_stats["files"].append({
+            error_meta = {
                 "filename": filename,
                 "error": str(e)
-            })
+            }
+            benchmark_stats["files"].append(error_meta)
+            # Save error metadata
+            save_file_metadata(output_dir, filename, error_meta)
 
     # Stats
     if total_audio_dur > 0:

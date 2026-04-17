@@ -1,0 +1,164 @@
+{
+    "model_name": "pyannote/speaker-diarization-community-1",
+    "run_info": {
+        "timestamp": "2026-04-16T23:30:14.535207",
+        "python_version": "3.12.3",
+        "torch_version": "2.10.0+cu130",
+        "system": "Linux",
+        "processor": "aarch64",
+        "device_type": "cuda",
+        "gpu_name": "NVIDIA GB10",
+        "gpu_count": 1,
+        "gpu_total_vram_gb": 121.63,
+        "cuda_version": "13.0"
+    },
+    "timings": {
+        "model_load_time_s": 1.1822178363800049,
+        "total_processing_time_s": 1146.8982005119324,
+        "total_audio_duration_s": 16616.364603174603,
+        "overall_rtf": 0.06902220960491047,
+        "max_vram_peak_mb": 1629.822265625
+    },
+    "files": [
+        {
+            "filename": "1-00606",
+            "audio_duration_s": 822.8310204081632,
+            "processing_time_s": 56.40825009346008,
+            "rtf": 0.06855386913521917,
+            "peak_vram_mb": 1629.822265625
+        },
+        {
+            "filename": "1-011610",
+            "audio_duration_s": 503.2751020408163,
+            "processing_time_s": 31.237996339797974,
+            "rtf": 0.06206942527680324,
+            "peak_vram_mb": 1629.822265625
+        },
+        {
+            "filename": "1-01308",
+            "audio_duration_s": 840.0718367346939,
+            "processing_time_s": 57.365572452545166,
+            "rtf": 0.06828650830091093,
+            "peak_vram_mb": 1629.822265625
+        },
+        {
+            "filename": "1-01801",
+            "audio_duration_s": 634.1224489795918,
+            "processing_time_s": 40.99052810668945,
+            "rtf": 0.06464134517339673,
+            "peak_vram_mb": 1629.822265625
+        },
+        {
+            "filename": "1-02209",
+            "audio_duration_s": 593.0579591836735,
+            "processing_time_s": 37.93490147590637,
+            "rtf": 0.06396491420184737,
+            "peak_vram_mb": 1629.822265625
+        },
+        {
+            "filename": "1-02604",
+            "audio_duration_s": 820.0097959183673,
+            "processing_time_s": 55.64170956611633,
+            "rtf": 0.06785493276187095,
+            "peak_vram_mb": 1629.822265625
+        },
+        {
+            "filename": "1-02808",
+            "audio_duration_s": 916.0620408163265,
+            "processing_time_s": 64.07392859458923,
+            "rtf": 0.06994496632290462,
+            "peak_vram_mb": 1629.822265625
+        },
+        {
+            "filename": "1-03007",
+            "audio_duration_s": 808.6987755102041,
+            "processing_time_s": 54.681246280670166,
+            "rtf": 0.06761633371606385,
+            "peak_vram_mb": 1629.822265625
+        },
+        {
+            "filename": "1-0605",
+            "audio_duration_s": 872.6465306122449,
+            "processing_time_s": 59.962379932403564,
+            "rtf": 0.06871325081683902,
+            "peak_vram_mb": 1629.822265625
+        },
+        {
+            "filename": "1-10106",
+            "audio_duration_s": 987.1673469387755,
+            "processing_time_s": 69.81806325912476,
+            "rtf": 0.07072566113094389,
+            "peak_vram_mb": 1629.822265625
+        },
+        {
+            "filename": "1-13112",
+            "audio_duration_s": 854.5490929705215,
+            "processing_time_s": 58.38820219039917,
+            "rtf": 0.06832632866935046,
+            "peak_vram_mb": 1629.822265625
+        },
+        {
+            "filename": "3-00112",
+            "audio_duration_s": 1015.7453061224489,
+            "processing_time_s": 72.50933265686035,
+            "rtf": 0.07138534849219308,
+            "peak_vram_mb": 1629.822265625
+        },
+        {
+            "filename": "3-00503",
+            "audio_duration_s": 844.5387755102041,
+            "processing_time_s": 59.48823857307434,
+            "rtf": 0.07043872975179406,
+            "peak_vram_mb": 1629.822265625
+        },
+        {
+            "filename": "3-0114",
+            "audio_duration_s": 1041.9461224489796,
+            "processing_time_s": 75.18603253364563,
+            "rtf": 0.07215923253011311,
+            "peak_vram_mb": 1629.822265625
+        },
+        {
+            "filename": "3-01606",
+            "audio_duration_s": 790.4130612244898,
+            "processing_time_s": 54.83605170249939,
+            "rtf": 0.06937644934352254,
+            "peak_vram_mb": 1629.822265625
+        },
+        {
+            "filename": "3-01707",
+            "audio_duration_s": 1084.1861224489796,
+            "processing_time_s": 78.6540596485138,
+            "rtf": 0.07254663938222024,
+            "peak_vram_mb": 1629.822265625
+        },
+        {
+            "filename": "3-01804",
+            "audio_duration_s": 726.2824489795919,
+            "processing_time_s": 49.01724886894226,
+            "rtf": 0.0674906146194366,
+            "peak_vram_mb": 1629.822265625
+        },
+        {
+            "filename": "3-02709",
+            "audio_duration_s": 837.0677551020408,
+            "processing_time_s": 58.72536492347717,
+            "rtf": 0.07015604718439834,
+            "peak_vram_mb": 1629.822265625
+        },
+        {
+            "filename": "3-02912",
+            "audio_duration_s": 851.5395918367346,
+            "processing_time_s": 60.221553802490234,
+            "rtf": 0.07072079135227866,
+            "peak_vram_mb": 1629.822265625
+        },
+        {
+            "filename": "3-12012",
+            "audio_duration_s": 772.1534693877551,
+            "processing_time_s": 51.75753951072693,
+            "rtf": 0.06703011974001202,
+            "peak_vram_mb": 1629.822265625
+        }
+    ]
+}

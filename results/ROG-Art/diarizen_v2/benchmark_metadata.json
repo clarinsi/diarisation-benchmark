@@ -1,0 +1,23 @@
+{
+    "model_name": "BUT-FIT/diarizen-wavlm-large-s80-md-v2",
+    "run_info": {
+        "timestamp": "2026-04-17T05:25:55.525382",
+        "python_version": "3.12.3",
+        "torch_version": "2.10.0",
+        "system": "Linux",
+        "processor": "aarch64",
+        "device_type": "cuda",
+        "gpu_name": "NVIDIA GB10",
+        "gpu_count": 1,
+        "gpu_total_vram_gb": 121.63,
+        "cuda_version": "13.1"
+    },
+    "timings": {
+        "model_load_time_s": 0.9322240352630615,
+        "total_processing_time_s": 0.0,
+        "total_audio_duration_s": 0.0,
+        "overall_rtf": 0.0,
+        "max_vram_peak_mb": 292.73193359375
+    },
+    "files": []
+}

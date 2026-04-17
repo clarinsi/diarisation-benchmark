@@ -20,7 +20,9 @@ import json
 import platform
 import datetime
 import soundfile as sf
+import numpy as np
 import logging
+import tempfile
 from pathlib import Path
 
 # Utišamo NeMo loge
@@ -129,11 +131,10 @@ def run_inference(input_dir, output_dir, hf_token, device="cuda", model_name="nv
                 # Rekonstrukcija globalnih števcev
                 for fstat in benchmark_stats["files"]:
                     fname = fstat.get("filename")
-                    if fname:
-                        processed_files.add(fname)
-                    
                     # Prištejemo samo uspešne teke k skupnim časom
                     if "error" not in fstat:
+                        if fname:
+                            processed_files.add(fname)                
                         total_proc += fstat.get("processing_time_s", 0)
                         total_audio += fstat.get("audio_duration_s", 0)
                         vram = fstat.get("peak_vram_mb", 0)
@@ -186,8 +187,8 @@ def run_inference(input_dir, output_dir, hf_token, device="cuda", model_name="nv
         out_path = os.path.join(output_dir, f"{filename}.rttm")
         
         # --- RESUME CHECK ---
-        # Če je datoteka že v JSON-u (uspešno ali z napako), jo preskočimo
-        # Razen če želimo ponovno poskusiti tiste z errorjem? Zaenkrat preskočimo vse zabeležene.
+        # Če je datoteka že v JSON-u (uspešno), jo preskočimo
+        # Razen če želimo ponovno poskusiti tiste z errorjem?
         if filename in processed_files:
             log(f"[{i+1}/{len(audio_files)}] Skipping {filename} (found in metadata)")
             continue
@@ -211,11 +212,36 @@ def run_inference(input_dir, output_dir, hf_token, device="cuda", model_name="nv
             continue
 
         log(f"[{i+1}/{len(audio_files)}] Processing {filename}...")
-        start = time.time()
+        # Fix stereo to tmp mono
+        # 1. Naloži posnetek
+        # sf.read vrne podatke v obliki (frames, channels)
+        data, samplerate = sf.read(audio_path)
+        
+        # 2. Pretvori v mono, če je posnetek stereo
+        # Če je data.ndim == 2, pomeni da ima več kanalov
+        if len(data.shape) > 1 and data.shape[1] > 1:
+            # Izračunamo povprečje čez kanale (os 1)
+            data = np.mean(data, axis=1)
+        
+        # 3. Preverjanje frekvence vzorčenja (NeMo običajno zahteva 16000)
+        # Če tvoj model zahteva 16kHz, vhod pa je npr. 44.1kHz, 
+        # bi tukaj potreboval še resample (npr. s scipy.signal.resample)
+        target_sr = 16000
+        if samplerate != target_sr:
+            from scipy.signal import resample
+            num_samples = int(len(data) * target_sr / samplerate)
+            data = resample(data, num_samples)
+            samplerate = target_sr
 
+        # 4. Uporaba začasne datoteke za NeMo
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            tmp_path = tmp.name
+            # soundfile zapiše numpy polje v datoteko
+            sf.write(tmp_path, data, samplerate)
+        start = time.time()
         try:
             with torch.no_grad():
-                batch_predictions = model.diarize(audio=[audio_path], batch_size=1)
+                batch_predictions = model.diarize(audio=[tmp_path], batch_size=1)
                 predictions = batch_predictions[0] if batch_predictions else []
 
             proc_time = time.time() - start
@@ -275,7 +301,10 @@ def run_inference(input_dir, output_dir, hf_token, device="cuda", model_name="nv
             traceback.print_exc()
             benchmark_stats["files"].append({"filename": filename, "error": str(e)})
             processed_files.add(filename)
-
+        finally:
+            # 6. Ročno pobrišemo datoteko, ko smo končali
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
         # --- UPDATE GLOBALS & SAVE AFTER EACH FILE ---
         # Posodobimo globalne statistike
         overall_rtf = total_proc / total_audio if total_audio > 0 else 0

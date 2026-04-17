@@ -1,0 +1,66 @@
+# Ta verzija podpira Blackwell (GB10/GB200) arhitekturo.
+FROM nvcr.io/nvidia/pytorch:23.11-py3
+
+WORKDIR /app
+
+# 1. Izklop bufferinga
+ENV PYTHONUNBUFFERED=1
+
+# 2. Sistemske knjižnice
+# ffmpeg je dodan, ker ga novi torchcodec/torchaudio včasih potrebujeta za backend
+RUN apt-get update && apt-get install -y \
+    libsndfile1 ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# 3. KLJUČEN FIX: Odstranimo pre-installed torchvision
+# Novejši NGC ima torchvision, ki se kregajo s pip paketi.
+RUN pip uninstall -y torchvision pynvml
+
+# Namestitev ustreznega torchaudio za CUDA 13.0 (ki je na GB10)
+# RUN pip install torchcodec --index-url https://download.pytorch.org/whl/cu130
+# RUN pip install torchcodec
+RUN pip install git+https://github.com/pytorch/audio.git@v2.2.0 --no-deps --no-build-isolation
+
+# Namestitev odvisnosti "na roke", da preprečimo konflikte
+RUN pip install --no-input \
+    httpx \
+    httpcore \
+    h11 \
+    "asteroid-filterbanks>=0.4.0" \
+    "opentelemetry-api>=1.34.0" \
+    "opentelemetry-sdk>=1.34.0" \
+    "opentelemetry-exporter-otlp>=1.34.0" \
+    "torch-audiomentations>=0.12.0" \
+    "lightning>=2.4" \
+    "huggingface-hub>=0.28.1" \
+    "einops>=0.8.1" \
+    "soundfile>=0.12.1" \
+    toml \
+    accelerate \
+    pytorch-lightning \
+    lightning-utilities \
+    torchmetrics \
+    julius \
+    torch_pitch_shift \
+    primePy \
+    optuna \
+    colorlog \
+    semver \
+    "numpy<2.0" \
+    safetensors \
+    "pyannote.core==5.0.0" \
+    "pyannote.database==5.1.3" \
+    "pyannote.metrics==3.2.1" \
+    "pyannote.pipeline==3.0.1" \
+    --no-deps
+
+
+RUN git clone https://github.com/BUTSpeechFIT/DiariZen.git
+# RUN pip install -r ./DiariZen/requirements.txt 
+RUN pip install -e ./DiariZen --no-deps
+# install pyannote-audio
+RUN pip install -e ./DiariZen/pyannote-audio[dev,testing] --no-deps
+RUN pip install rich pytorch_metric_learning --no-deps
+COPY run_inference.py .
+
+ENTRYPOINT ["python", "run_inference.py"]

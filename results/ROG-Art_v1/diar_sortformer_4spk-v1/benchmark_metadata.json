@@ -1,0 +1,117 @@
+{
+    "model_name": "nvidia/diar_sortformer_4spk-v1",
+    "run_info": {
+        "timestamp": "2026-04-16T02:26:03.748553",
+        "python_version": "3.12.3",
+        "torch_version": "2.9.0a0+50eac811a6.nv25.09",
+        "system": "Linux",
+        "processor": "aarch64",
+        "device_type": "cuda",
+        "gpu_name": "NVIDIA GB10",
+        "gpu_count": 1,
+        "gpu_vram_gb": 121.63,
+        "cuda_version": "13.0"
+    },
+    "timings": {
+        "model_load_time_s": 1.365274429321289,
+        "max_vram_peak_mb": 102446.939453125,
+        "total_processing_time_s": 229.32073593139648,
+        "total_audio_duration_s": 9635.289297052153,
+        "overall_rtf": 0.023800088286041965
+    },
+    "files": [
+        {
+            "filename": "Rog-Art-J-Gvecg-P500014",
+            "audio_duration_s": 3275.48,
+            "error": "Skipped: Duration Exceeds Safety Limit"
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P500016",
+            "audio_duration_s": 1237.64,
+            "processing_time_s": 30.399914979934692,
+            "rtf": 0.02456280903973263,
+            "peak_vram_mb": 52664.61474609375
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P500026",
+            "audio_duration_s": 2426.6797052154193,
+            "error": "Skipped: Duration Exceeds Safety Limit"
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P500028",
+            "audio_duration_s": 3299.1198185941043,
+            "error": "Skipped: Duration Exceeds Safety Limit"
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P500046",
+            "audio_duration_s": 1632.894784580499,
+            "processing_time_s": 44.96500325202942,
+            "rtf": 0.027536987487887174,
+            "peak_vram_mb": 90973.70263671875
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P500048",
+            "audio_duration_s": 1901.161859410431,
+            "error": "Skipped: Duration Exceeds Safety Limit"
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P500054",
+            "audio_duration_s": 2612.9997052154195,
+            "error": "Skipped: Duration Exceeds Safety Limit"
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P500063",
+            "audio_duration_s": 2014.9326984126983,
+            "error": "Skipped: Duration Exceeds Safety Limit"
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P500064",
+            "audio_duration_s": 3348.938798185941,
+            "error": "Skipped: Duration Exceeds Safety Limit"
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P580002",
+            "audio_duration_s": 1411.828843537415,
+            "processing_time_s": 31.311203718185425,
+            "rtf": 0.022177761746058025,
+            "peak_vram_mb": 68337.49462890625
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P580003",
+            "error": "OOM: CUDA Out Of Memory"
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P580009",
+            "audio_duration_s": 1204.2769160997732,
+            "processing_time_s": 22.898200035095215,
+            "rtf": 0.019014065393908222,
+            "peak_vram_mb": 50165.201171875
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P580023",
+            "audio_duration_s": 1000.8819954648526,
+            "processing_time_s": 16.916873931884766,
+            "rtf": 0.01690196647410751,
+            "peak_vram_mb": 35068.89794921875
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P580041",
+            "audio_duration_s": 1414.1898866213153,
+            "processing_time_s": 33.53534650802612,
+            "rtf": 0.02371346791918195,
+            "peak_vram_mb": 68656.189453125
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P580047",
+            "audio_duration_s": 1733.5768707482994,
+            "processing_time_s": 49.294193506240845,
+            "rtf": 0.028434962612856607,
+            "peak_vram_mb": 102446.939453125
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P580051",
+            "audio_duration_s": 22883.217777777776,
+            "error": "Skipped: Duration Exceeds Safety Limit"
+        }
+    ]
+}
