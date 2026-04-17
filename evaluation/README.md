@@ -25,7 +25,7 @@ The report generator automatically reads all directories in your results/ folder
 # Evaluate with gold_standard_trimmed_15
 docker run --rm \
   -v "$(pwd)/data/ROG-Dialog:/data/rog" \
-  -v "$(pwd)/results:/data/results" \
+  -v "$(pwd)/results/ROG-Dialog:/data/results" \
   -v "$(pwd)/reports:/data/reports" \
   -v "$(pwd)/evaluation/DATASET_ERRATA.json:/app/DATASET_ERRATA.json" \
   -e HOST_UID=$(id -u) -e HOST_GID=$(id -g) \
@@ -59,7 +59,7 @@ Copy "gold" rttm (e.g. rog-dialog.rttm from root of this project) to path `data/
  
 docker run --rm \
   -v "$(pwd)/data/ROG-Dialog:/data/rog" \
-  -v "$(pwd)/results:/data/results" \
+  -v "$(pwd)/results/ROG-Dialog:/data/results" \
   -v "$(pwd)/reports:/data/reports" \
   -v "$(pwd)/evaluation/DATASET_ERRATA.json:/app/DATASET_ERRATA.json" \
   -e HOST_UID=$(id -u) -e HOST_GID=$(id -g) \
@@ -69,7 +69,7 @@ docker run --rm \
   --metadata /data/rog/docs/ROG-Dia-meta-speeches.tsv \
   --boundary_tolerance 0.250 \
   --analysis_collar 0.25 \
-  --output /data/reports/ROG-Dia_Your_Report
+  --output /data/reports/ROG-Dia_Test_Report
 
 ```
 
