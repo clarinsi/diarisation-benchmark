@@ -14,10 +14,10 @@
     },
     "timings": {
         "model_load_time_s": 1.0168426036834717,
-        "max_vram_peak_mb": 2454.31884765625,
-        "total_processing_time_s": 60.205498456954956,
-        "total_audio_duration_s": 30371.228752834468,
-        "overall_rtf": 0.001982320140779162
+        "max_vram_peak_mb": 15371.93603515625,
+        "total_processing_time_s": 105.35835146903992,
+        "total_audio_duration_s": 53254.446530612244,
+        "overall_rtf": 0.0019783953891714338
     },
     "files": [
         {
@@ -124,6 +124,13 @@
             "processing_time_s": 3.3755857944488525,
             "rtf": 0.0019471797596098401,
             "peak_vram_mb": 1501.22705078125
+        },
+        {
+            "filename": "Rog-Art-J-Gvecg-P580051",
+            "audio_duration_s": 22883.217777777776,
+            "processing_time_s": 45.15285301208496,
+            "rtf": 0.001973186352136785,
+            "peak_vram_mb": 15371.93603515625
         }
     ]
 }
