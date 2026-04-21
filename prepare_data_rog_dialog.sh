@@ -7,7 +7,7 @@ set -e
 DATASET_NAME="ROG-Dialog"
 BASE_DIR="data/$DATASET_NAME"
 
-echo "=== 1. Preverjam, ali je dataset že organiziran: $DATASET_NAME ==="
+echo "=== 1. Checking whether the dataset is already organized: $DATASET_NAME ==="
 mkdir -p "$BASE_DIR/audio"
 mkdir -p "$BASE_DIR/annotations/trs"
 mkdir -p "$BASE_DIR/annotations/exb"
@@ -19,30 +19,30 @@ mkdir -p data/raw
 SKIP_REORG=false
 if [ -d "$BASE_DIR/audio" ] && [ -d "$BASE_DIR/annotations/trs" ] && [ -d "$BASE_DIR/annotations/exb" ] && [ -d "$BASE_DIR/annotations/exs" ] && [ -d "$BASE_DIR/docs" ]; then
     if [ "$(ls -A "$BASE_DIR/audio" 2>/dev/null)" ] && [ "$(ls -A "$BASE_DIR/annotations/trs" 2>/dev/null)" ] && [ "$(ls -A "$BASE_DIR/annotations/exb" 2>/dev/null)" ] && [ "$(ls -A "$BASE_DIR/annotations/exs" 2>/dev/null)" ]; then
-        echo "Dataset že organiziran; preskočim prenose/razširjanje/reorganizacijo."
+        echo "Dataset already organized; skipping download, extraction, and reorganization."
         SKIP_REORG=true
     fi
 fi
 
 if [ "$SKIP_REORG" = true ]; then
-    echo "=== Preskakujem prenos in reorganizacijo ==="
+    echo "=== Skipping download and reorganization ==="
 else
     # Premik v mapo za prenose
     cd data/raw
 
-    echo "=== 2. Prenašam datoteke ==="
+    echo "=== 2. Downloading files ==="
 if [ ! -f "ROG-Dialog.zip" ] || [ ! -f "ROG-Dialog_audio.zip" ]; then
-    echo "Prenašam s CLARIN.SI..."
+    echo "Downloading from CLARIN.SI..."
     curl --remote-name-all https://www.clarin.si/repository/xmlui/bitstream/handle/11356/2073{/ROG-Dialog.zip,/ROG-Dialog_audio.zip}
 else
-    echo "Datoteke že obstajajo."
+    echo "Files already present."
 fi
 
-echo "=== 3. Razširjam arhive ==="
+echo "=== 3. Extracting archives ==="
 unzip -q -o ROG-Dialog_audio.zip
 unzip -q -o ROG-Dialog.zip
 
-echo "=== 4. Reorganiziram v '$BASE_DIR' ==="
+echo "=== 4. Reorganizing into '$BASE_DIR' ==="
 cd ../..
 fi
 
@@ -67,7 +67,7 @@ if [ -d "data/raw/ROG-Dialog/DOCS" ]; then
     mv data/raw/ROG-Dialog/DOCS/* "$BASE_DIR/docs/"
 fi
 
-echo "=== 5. Čiščenje ==="
+echo "=== 5. Cleaning up ==="
 rm -rf data/raw/ROG-Dialog
 
 OUTPUT_FILENAME="${1:-default_gold_standard}"
@@ -75,7 +75,7 @@ if [[ "$OUTPUT_FILENAME" != *.rttm ]]; then
     OUTPUT_FILENAME="$OUTPUT_FILENAME.rttm"
 fi
 
-echo "=== 6. Generiram gold_standard RTTM ==="
+echo "=== 6. Generating gold RTTM ==="
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # merge_threshold / min_duration / prioritize_pog: omitted → defaults in gold_rttm_from_annotations
 read -rp "Enable silence trimming (requires numpy + praat-parselmouth)? [Y/n]: " TRIM_ANS
@@ -86,5 +86,5 @@ case "${TRIM_ANS:-Y}" in
 esac
 python3 "$SCRIPT_DIR/rog_dialog_data_process.py" "${TRIM_FLAGS[@]}" --output_filename "$OUTPUT_FILENAME"
 
-echo "=== KONČANO! ==="
-echo "Dataset $DATASET_NAME je pripravljen."
+echo "=== Script finished: $DATASET_NAME preparation completed ==="
+echo "Dataset $DATASET_NAME is ready."

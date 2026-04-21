@@ -71,7 +71,7 @@ DATA_DIR="$HOST_PWD/data/$DATASET"
 RESULT_DIR="$HOST_PWD/results/$DATASET"
 
 if [ -z "$HF_TOKEN" ] || [ "$HF_TOKEN" = "YOUR_HUGGINGFACE_TOKEN" ]; then
-  echo "ERROR: HF_TOKEN is not set. Please update the HF_TOKEN variable at the top of run_rog_art.sh."
+  echo "ERROR: HF_TOKEN is not set. Pass -t/--hf-token or set HF_TOKEN before running run_inference.sh."
   exit 1
 fi
 
