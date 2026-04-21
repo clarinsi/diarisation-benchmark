@@ -1,15 +1,16 @@
 import argparse
 import csv
-import os
 import shutil
-import xml.etree.ElementTree as ET
 from pathlib import Path
 
-# --- KONFIGURACIJA ---
+from gold_rttm_from_annotations import (
+    DEFAULT_MERGE_THRESHOLD,
+    DEFAULT_MIN_DURATION,
+    DEFAULT_PRIORITIZE_POG,
+    generate_gold_rttm_from_trs,
+)
+
 DATASET_NAME = "ROG-Art"
-DEFAULT_MERGE_THRESHOLD = 1.0  # Sekunde
-DEFAULT_MIN_DURATION = 0.1  # Sekunde
-DEFAULT_PRIORITIZE_POG = False
 
 REPO_ROOT = Path(__file__).resolve().parent
 RAW_ROOT = REPO_ROOT / "data/raw/data/ROG-Art/ROG"
@@ -30,75 +31,6 @@ DEST_DIRS = {
     "exs": DEST_BASE / "annotations" / "exs",
     "ref_rttm": DEST_BASE / "ref_rttm",
 }
-
-
-def merge_segments_linear(segments, gap_threshold):
-    if not segments:
-        return []
-
-    segments.sort(key=lambda x: x["start"])
-    merged = []
-    current = segments[0]
-
-    for next_seg in segments[1:]:
-        if next_seg["speaker"] == current["speaker"]:
-            gap = next_seg["start"] - current["end"]
-            if gap <= gap_threshold:
-                current["end"] = max(current["end"], next_seg["end"])
-                continue
-
-        merged.append(current)
-        current = next_seg
-
-    merged.append(current)
-    return merged
-
-
-def parse_trs_to_rttm(trs_path, output_file, merge_threshold, min_duration):
-    try:
-        tree = ET.parse(trs_path)
-        root = tree.getroot()
-    except ET.ParseError as e:
-        print(f"Warning: napaka pri parsiranju {trs_path}: {e}")
-        return 0
-
-    filename = Path(trs_path).stem
-    file_id = filename.replace("-std", "").replace("-pog", "")
-
-    speaker_map = {}
-    for spk in root.findall(".//Speaker"):
-        spk_id = spk.get("id")
-        spk_name = spk.get("name")
-        if spk_id and spk_name:
-            speaker_map[spk_id] = spk_name
-
-    all_raw_segments = []
-    for turn in root.findall(".//Turn"):
-        start_time = float(turn.get("startTime", 0))
-        end_time = float(turn.get("endTime", 0))
-        spk_refs = turn.get("speaker")
-        if not spk_refs:
-            continue
-
-        for spk_ref in spk_refs.split():
-            real_name = speaker_map.get(spk_ref, spk_ref)
-            all_raw_segments.append({"start": start_time, "end": end_time, "speaker": real_name})
-
-    smooth_segments = merge_segments_linear(all_raw_segments, merge_threshold)
-
-    count = 0
-    for seg in smooth_segments:
-        duration = seg["end"] - seg["start"]
-        if duration < min_duration:
-            continue
-        line = (
-            f"SPEAKER {file_id} 1 {seg['start']:.3f} {duration:.3f} <NA> <NA> "
-            f"{seg['speaker']} <NA> <NA>"
-        )
-        output_file.write(line + "\n")
-        count += 1
-
-    return count
 
 
 def find_multi_speaker_recordings(metadata_file: Path):
@@ -141,7 +73,6 @@ def reorganize_dataset(multi_speaker_ids: set):
             shutil.rmtree(d)
         d.mkdir(parents=True, exist_ok=True)
 
-    # Audio
     n_audio = 0
     audio_src = SOURCE_PATHS["audio"]
     if audio_src.exists():
@@ -152,7 +83,6 @@ def reorganize_dataset(multi_speaker_ids: set):
                 n_audio += 1
     print(f"Kopiranih WAV (multi-govorniki): {n_audio}")
 
-    # Annotations
     n_trs = 0
     n_exb = 0
     n_exs = 0
@@ -177,7 +107,6 @@ def reorganize_dataset(multi_speaker_ids: set):
 
     print(f"Kopiranih TRS: {n_trs}, EXB: {n_exb}, EXS: {n_exs}")
 
-    # Dokumentacija
     docs_src = SOURCE_PATHS["metadata"]
     if docs_src.exists():
         copied_docs = 0
@@ -191,49 +120,7 @@ def reorganize_dataset(multi_speaker_ids: set):
         print(f"Kopiranih dokumentov: {copied_docs}")
 
 
-def generate_gold_rttm(merge_threshold, min_duration, prioritize_pog, output_filename):
-    trs_dir = DEST_DIRS["trs"]
-    if not trs_dir.exists():
-        print(f"TRS mapo ni najdena: {trs_dir}")
-        return
-
-    all_trs = sorted(trs_dir.glob("*.trs"))
-    if not all_trs:
-        print("Ni TRS datotek za obdelavo.")
-        return
-
-    file_groups = {}
-    for f in all_trs:
-        base = f.stem.replace("-std", "").replace("-pog", "")
-        file_groups.setdefault(base, []).append(f)
-
-    final_name = output_filename if output_filename.endswith(".rttm") else f"{output_filename}.rttm"
-    out_path = DEST_DIRS["ref_rttm"] / final_name
-
-    with out_path.open("w", encoding="utf-8") as out_f:
-        out_f.write(f"; Generated with merge_threshold={merge_threshold}s, min_duration={min_duration}s, prior_pog={prioritize_pog}, output_filename={final_name}\n")
-
-        total_segments = 0
-        for base_id, files in sorted(file_groups.items()):
-            std_files = [f for f in files if "-std" in f.name]
-            pog_files = [f for f in files if "-pog" in f.name]
-
-            selected = None
-            if prioritize_pog:
-                selected = pog_files[0] if pog_files else (std_files[0] if std_files else files[0])
-            else:
-                selected = std_files[0] if std_files else (pog_files[0] if pog_files else files[0])
-
-            chosen_name = selected.name if selected else "(none)"
-            print(f"Processing {base_id} -> {chosen_name}")
-            if selected:
-                total_segments += parse_trs_to_rttm(selected, out_f, merge_threshold, min_duration)
-
-    print(f"Gold RTTM written: {out_path}")
-
-
 def is_dataset_organized(multi_speaker_ids: set):
-    # Check whether core files for multi-speaker entries already exist.
     audio_dir = DEST_DIRS["audio"]
     trs_dir = DEST_DIRS["trs"]
 
@@ -253,37 +140,44 @@ def main():
     parser = argparse.ArgumentParser(
         description="Prepare ROG-Art data subset (multi-speaker) and generate filtered RTTM gold standard",
         epilog="Example: python3 rog_art_data_process.py --merge_threshold 1.0 --min_duration 0.1 "
-               "--prioritize_pog false --output_filename myconfig --force_reorganize"
+        "--prioritize_pog false --output_filename myconfig --force_reorganize",
     )
     parser.add_argument(
         "--merge_threshold",
         type=float,
         default=DEFAULT_MERGE_THRESHOLD,
-        help="(float) Threshold (seconds) for merging adjacent same-speaker segments. Default: %(default)s."
+        help="(float) Threshold (seconds) for merging adjacent same-speaker segments. Default: %(default)s.",
     )
     parser.add_argument(
         "--min_duration",
         type=float,
         default=DEFAULT_MIN_DURATION,
-        help="(float) Minimum segment duration (seconds) to keep in RTTM. Default: %(default)s."
+        help="(float) Minimum segment duration (seconds) to keep in RTTM. Default: %(default)s.",
     )
     parser.add_argument(
         "--prioritize_pog",
         type=lambda x: x.lower() in ["1", "true", "yes"],
         default=DEFAULT_PRIORITIZE_POG,
-        help="(bool) Use .pog transcripts first if available; otherwise use .std. Accepts true/false. Default: %(default)s."
+        help="(bool) Use .pog transcripts first if available; otherwise use .std. Accepts true/false. Default: %(default)s.",
     )
     parser.add_argument(
         "--force_reorganize",
         action="store_true",
         default=False,
-        help="(flag) Force reorganization of the dataset even if it appears already organized."
+        help="(flag) Force reorganization of the dataset even if it appears already organized.",
     )
     parser.add_argument(
         "--output_filename",
         type=str,
         required=True,
-        help="(string) Output RTTM filename (with or without .rttm extension). Required."
+        help="(string) Output RTTM filename (with or without .rttm extension). Required.",
+    )
+    parser.add_argument(
+        "--enable_trimming",
+        action="store_true",
+        default=False,
+        help="Also write <name>_trimmed.rttm using Parselmouth (requires numpy, praat-parselmouth). "
+        "Uses dataset audio under data/ROG-Art/audio.",
     )
     args = parser.parse_args()
 
@@ -307,7 +201,18 @@ def main():
     else:
         print("Dataset že reorganiziran. Preskočim reorganization.")
 
-    generate_gold_rttm(args.merge_threshold, args.min_duration, args.prioritize_pog, args.output_filename)
+    final_name = args.output_filename if args.output_filename.endswith(".rttm") else f"{args.output_filename}.rttm"
+    output_path = DEST_DIRS["ref_rttm"] / final_name
+    generate_gold_rttm_from_trs(
+        DEST_DIRS["trs"],
+        output_path,
+        args.merge_threshold,
+        args.min_duration,
+        args.prioritize_pog,
+        pipeline=DATASET_NAME,
+        audio_dir=DEST_DIRS["audio"],
+        enable_trimming=args.enable_trimming,
+    )
 
 
 if __name__ == "__main__":

@@ -7,3 +7,4 @@ data/*
 !prepare_data.sh
 notes
 *.log
+__pycache__/

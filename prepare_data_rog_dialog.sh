@@ -77,7 +77,14 @@ fi
 
 echo "=== 6. Generiram gold_standard RTTM ==="
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-python3 "$SCRIPT_DIR/rog_dialog_data_process.py" --merge_threshold 1.0 --min_duration 0.1 --prioritize_pog false --output_filename "$OUTPUT_FILENAME"
+# merge_threshold / min_duration / prioritize_pog: omitted → defaults in gold_rttm_from_annotations
+read -rp "Enable silence trimming (requires numpy + praat-parselmouth)? [Y/n]: " TRIM_ANS
+TRIM_FLAGS=()
+case "${TRIM_ANS:-Y}" in
+    [Nn]*|[Nn]) ;;
+    *) TRIM_FLAGS=(--enable_trimming) ;;
+esac
+python3 "$SCRIPT_DIR/rog_dialog_data_process.py" "${TRIM_FLAGS[@]}" --output_filename "$OUTPUT_FILENAME"
 
 echo "=== KONČANO! ==="
 echo "Dataset $DATASET_NAME je pripravljen."
