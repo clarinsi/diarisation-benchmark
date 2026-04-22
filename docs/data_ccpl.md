@@ -1,59 +1,53 @@
-# **Appendix: CCPL Dataset Description, Preparation, and Sampling Methodology**
+# Appendix: CCPCL dataset description, preparation, and sampling methodology
 
-This appendix details the CCPL data source used in the experiment, the procedures required to set up the computational environment, and the methodology applied to extract a representative stratified sample from the original corpus.
+This appendix details the **CHILDES Croatian Corpus of Preschool Child Language (CCPCL)** used in the benchmark, how to prepare it in this repository, and the stratified sampling methodology for the 20-session evaluation subset.
 
-## **1. Data Source Description**
+See also the operator-oriented guide: [Data preparation](data_preparation.md).
 
-One of the datasets utilized in this study is the **CHILDES Croatian Corpus of Preschool Child Language (CCPCL)**. This corpus is part of the broader TalkBank system and provides rich, transcribed interactions of Croatian preschool children, annotated in the CHAT format.
+## 1. Data source description
 
-* **Corpus:** CCPCL (Croatian Corpus of Preschool Child Language)  
-* **Language:** Croatian (Slavic)  
-* **Source Archive:** [https://talkbank.org/childes/access/Slavic/Croatian/CCPCL.html](https://talkbank.org/childes/access/Slavic/Croatian/CCPCL.html)  
-* **Data Types:** Audio recordings (.wav) and corresponding transcripts (.cha).
+The **CHILDES Croatian Corpus of Preschool Child Language (CCPCL)** is part of TalkBank and provides transcribed interactions of Croatian preschool children in **CHAT (`.cha`)** format with associated **`.wav`** audio.
 
-**Citation and Usage:** Use of this data must adhere to TalkBank's terms of service, which require appropriate citation of the original corpus creators and the CHILDES database system.
-* MacWhinney, B. 2000. *The CHILDES Project: Tools for Analyzing Talk* 
+* **Corpus:** CCPCL (Croatian Corpus of Preschool Child Language)
+* **Language:** Croatian (Slavic)
+* **Source archive (registration required):** [https://talkbank.org/childes/access/Slavic/Croatian/CCPCL.html](https://talkbank.org/childes/access/Slavic/Croatian/CCPCL.html)
+* **Data types:** Audio (`.wav`) and transcripts (`.cha`).
+
+**Citation and usage:** Follow TalkBank terms of service and cite the corpus and CHILDES appropriately, for example:
+
+* MacWhinney, B. 2000. *The CHILDES Project: Tools for Analyzing Talk*
 * Hržica, G., Bošnjak Botica, T., Košutar, S. (2023). *Stem overgeneralizations in the acquisition of Croatian verbal morphology: Evidence from parental questionnaires.* Word Structure, 16:2-3, 176-205
-* Hržica, G., Košutar, S., Botica, T. B. and Milin, P. (2024). *The role of entrenchment and schematisation in the acquisition of rich verbal morphology.* Cognitive Linguistics. https://doi.org/10.1515/cog-2023-0022.
+* Hržica, G., Košutar, S., Botica, T. B. and Milin, P. (2024). *The role of entrenchment and schematisation in the acquisition of rich verbal morphology.* Cognitive Linguistics. [https://doi.org/10.1515/cog-2023-0022](https://doi.org/10.1515/cog-2023-0022)
 
-Access to the raw data requires registration and a valid login via the TalkBank system.
+## 2. Data preparation in this repository
 
-## **2. Data Preparation and Environment Setup**
+Reproducible layout and gold RTTM generation are driven by [`prepare_data_ccpcl.sh`](../prepare_data_ccpcl.sh) (or `./prepare_data.sh ccpcl` from [`prepare_data.sh`](../prepare_data.sh)).
 
-To ensure reproducibility, an automated bash script (prepare\_data\_ccpcl.sh) is provided to structure the directories and prepare the annotations. The following steps outline the procedure to replicate the data environment:
+1. **Download transcripts (manual):** register and sign in at TalkBank, download **CCPCL.zip**, and place it at **`data/raw/CCPCL.zip`**.
+2. **Run the preparation script** from the repository root, for example `./prepare_data_ccpcl.sh` or `./prepare_data.sh ccpcl`. An optional first argument sets the gold RTTM basename (default `ccpcl_gold_standard`, written to `data/CHILDES-CCPCL/ref_rttm/<basename>.rttm`; append `.rttm` automatically if omitted).
+   * The script creates `data/CHILDES-CCPCL/` (including `audio/`, `annotations/trs/`, `docs/`) and extracts the archive under **`data/raw/CCPCL/`**. If the zip contains a nested `CCPCL/` directory, the Python step uses that path automatically (see shell script `CHA_DIR` logic).
+3. **Add audio:** download `.wav` files (see Section 4 for the benchmark list and links) into **`data/CHILDES-CCPCL/audio/`**.
+   * If **no** `.wav` files are present, the shell script prints download instructions and **does not** run `ccpcl_data_process.py`; it still prints a final “script finished” line. Re-run after adding audio.
+4. **Gold RTTM:** when `.wav` files are present, the script compares their stems to the embedded 20-file benchmark list. Depending on the outcome, it may prompt whether to continue, then (if you confirm) runs:
 
-1. **Download the Transcripts:**  
-   * Register and log in to TalkBank.  
-   * Download the transcript archive (CCPCL.zip) manually from the corpus webpage.  
-   * Place the downloaded archive into the project directory at: data/raw/CCPCL.zip.  
-2. **Initialize the Environment:**  
-   * Execute the setup script from the root directory: ./prepare\_data\_ccpcl.sh  
-   * The script will automatically create the necessary directory structure (data/CHILDES-CCPCL/audio, data/CHILDES-CCPCL/annotations/trs, etc.) and safely extract the .cha transcripts to data/raw/CCPCL.  
-3. **Acquire Audio Files:**  
-   * The script validates the presence of .wav audio files. If none are found, it halts and prompts the user to download them.  
-   * Audio files must be downloaded from the CCPCL media repository and placed inside data/CHILDES-CCPCL/audio. (Note: For the purpose of this experiment, only the stratified sample listed in Section 4 is required).  
-4. **Generate the Reference RTTM:**  
-   * Once the .wav files are in place, re-run ./prepare\_data\_ccpcl.sh.  
-   * The script will detect the audio files and prompt to execute the Python processing script (ccpcl\_data\_process.py).  
-   * Upon confirmation, the script parses the .cha files in data/raw/CCPCL/CCPCL/ and generates a gold-standard Diarization file (data/CHILDES-CCPCL/ref\_rttm/ccpcl\_gold\_standard.rttm), applying necessary threshold merging (--merge\_threshold 1.0) and minimum duration filtering (--min\_duration 0.1).
+   ```bash
+   python3 ccpcl_data_process.py [--enable_trimming] \
+     --cha_dir <resolved CHA directory> \
+     --audio_dir data/CHILDES-CCPCL/audio \
+     --output_file data/CHILDES-CCPCL/ref_rttm/<basename>.rttm
+   ```
 
-## **3. Stratified Sampling Methodology**
+   The shell wrapper sets `--output_file` from the optional first positional argument (default basename `ccpcl_gold_standard`).
 
-The original CCPCL dataset consists of exactly $N=60$ annotated sessions. To optimize computational resources while maintaining statistical representativeness, a sample size of $n=20$ (approximately $1/3$ of the entire dataset) was extracted.
+   Defaults for merge and minimum segment length match [`gold_rttm_from_annotations.py`](../gold_rttm_from_annotations.py): **`merge_threshold=1.0`** s, **`min_duration=0.1`** s (see `ccpcl_data_process.py` argparse defaults).
 
-To ensure that the subset accurately reflects the demographic distribution of the original corpus, **proportionate stratified random sampling** was employed.
+## 3. Stratified sampling methodology
 
-1. **Stratification Variables:** The data was stratified along two primary dimensions:  
-   * **Age (rounded):** 3, 4, 5, and 6 years.  
-   * **Gender:** Male (M) and Female (F).  
-2. **Allocation:** The total population was divided into 8 mutually exclusive strata based on the combination of Age and Gender.  
-3. **Selection:** From each stratum, exactly $1/3$ of the subjects were randomly selected. Standard rounding techniques were applied to determine the exact number of instances per stratum, ensuring a total sample size of 20 while minimizing representation bias.
+The full CCPCL release contains **N = 60** annotated sessions. The benchmark uses **n = 20** sessions selected with **proportionate stratified random sampling** by rounded age (3–6 years) and gender, preserving approximate balance (10 male / 10 female in the published sample).
 
-The resulting sample perfectly preserves the gender balance (10 Males, 10 Females) and the specific age-gender ratios present in the original dataset.
+## 4. Selected representative sample (benchmark WAV stems)
 
-## **4. Selected Representative Sample**
-
-The table below lists the specific sessions selected through the stratified sampling process. Direct download links to the corresponding .wav audio files from the TalkBank media server are provided for immediate replication of the experiment.
+The twenty session IDs below match the `EXPECTED_WAV_STEMS` list in [`prepare_data_ccpcl.sh`](../prepare_data_ccpcl.sh). File names are `<SessionID>.wav`.
 
 | Age (Years) | Gender | Session ID | File Name | Download Link (.wav) |
 | :---- | :---- | :---- | :---- | :---- |
@@ -78,4 +72,4 @@ The table below lists the specific sessions selected through the stratified samp
 | **6** | F | 3-00112 | 3-00112.wav | [Download](https://media.talkbank.org/childes/Slavic/Croatian/CCPCL/0wav/3-00112.wav?f=save) |
 | **6** | F | 3-01606 | 3-01606.wav | [Download](https://media.talkbank.org/childes/Slavic/Croatian/CCPCL/0wav/3-01606.wav?f=save) |
 
-*(Note: Corresponding .cha transcript files are generated and processed via the procedure outlined in Section 2).*
+Corresponding `.cha` transcripts are included in **CCPCL.zip**; the preparation script filters them to stems present as `.wav` in `data/CHILDES-CCPCL/audio/` when generating the gold RTTM.

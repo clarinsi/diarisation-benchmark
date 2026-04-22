@@ -1,92 +1,113 @@
-# **Reference RTTM Generation for Diarization Benchmark**
+# Reference RTTM generation for diarisation benchmark
 
-This document describes the methodology, design decisions, and parameters used to generate the "Gold Standard" RTTM files for the Diarization Benchmark (specifically for the ROG-Dialog dataset).
+This document describes the methodology, design decisions, and parameters used to generate gold-standard RTTM files for the diarisation benchmark (ROG-Dialog, ROG-Art, and CHILDES-CCPCL).
 
-## **1\. Source Data**
+## 1. Source data
 
-The reference annotations are derived primarily from **Transcriber (.trs)** files provided by CLARIN.SI (ROG-Dialog/ROG-Art). CCPCL uses **CHAT (.cha)** transcripts from the TalkBank CCPCL corpus.
+The reference annotations are derived primarily from **Transcriber (.trs)** files provided by CLARIN.SI (ROG-Dialog / ROG-Art). CCPCL uses **CHAT (.cha)** transcripts from the TalkBank CCPCL corpus.
 
-* **ROG-Dialog / ROG-Art:** XML-based .trs files.  
+* **ROG-Dialog / ROG-Art:** XML-based `.trs` files.
   * Metadata: `*.trs` with `*Speaker` and `*Turn` segments.
-  * Selection: default .std preferred over .pog (if both exist).
-* **CCPCL:** CHAT .cha files with time-coded line annotations in the form `*SPEAKER: text start_end` (ms).
-  * Conversion: extract speaker/accounted segments and convert to RTTM with linear merge/min-duration heuristics.
+  * Selection: `.std` is preferred over `.pog` when both exist (configurable via `prioritize_pog` in the Python entry points).
+* **CCPCL:** CHAT `.cha` files with time-coded line annotations in the form `*SPEAKER: text start_end` (ms).
+  * Conversion: extract speaker segments and convert to RTTM with linear merge and minimum-duration heuristics in [`gold_rttm_from_annotations.py`](../gold_rttm_from_annotations.py), invoked from [`ccpcl_data_process.py`](../ccpcl_data_process.py).
 
-## **2\. The "Smoothing" Problem**
+## 2. The smoothing problem
 
-Raw manual transcriptions often contain tiny gaps (e.g., 50ms silence for a breath) or strict turn-taking segmentation that splits a single sentence into multiple entries if an interlocutor makes a short sound (e.g., "mhm").
+Raw manual transcriptions often contain tiny gaps (for example breath pauses) or strict turn-taking segmentation that splits a single phrase into multiple entries when a short backchannel occurs.
 
-Directly converting these raw segments to RTTM creates an artificially high segment count, which can negatively penalize diarization models that tend to output smoother, continuous segments.
+Directly converting those raw segments to RTTM inflates segment count and can penalise diarisation models that output smoother segments. **Linear merging** addresses this.
 
-To address this, we apply a **Linear Merging** strategy.
+### Design decision: linear merging vs per-speaker merging
 
-### **Design Decision: Linear Merging vs. Per-Speaker Merging**
+1. **Per-speaker merging (rejected):** merge same-speaker segments when the gap is small, even if another speaker spoke in between. That can create overlaps not present in the manual ground truth.
+2. **Linear merging (selected):** merge adjacent segments of the same speaker **only if** no other speaker intervenes. This keeps turn-taking structure while smoothing micro-pauses within a turn.
 
-We evaluated two strategies for merging adjacent segments of the same speaker:
+## 3. Tunable parameters (merge and minimum duration)
 
-1. **Per-Speaker Merging (Rejected):**  
-   * *Logic:* Merge segments of Speaker A if the gap is small, regardless of whether Speaker B spoke in between.  
-   * *Result:* Creates overlaps where none existed in the manual annotation (e.g., Speaker A "talks over" Speaker B's backchannel).  
-   * *Verdict:* Rejected because it artificially creates overlapping speech ground truth from non-overlapping data.  
-2. **Linear Merging (Selected):**  
-   * *Logic:* Merge adjacent segments of Speaker A **only if** no other speaker intervenes.  
-   * *Result:* Preserves the strict turn-taking structure of the original dialogue while smoothing out micro-pauses within a single turn.  
-   * *Verdict:* Selected as the most faithful representation of the original manual annotation intent suitable for benchmarking ASR/Diarization systems.
+These defaults are defined as `DEFAULT_MERGE_THRESHOLD` and `DEFAULT_MIN_DURATION` in [`gold_rttm_from_annotations.py`](../gold_rttm_from_annotations.py) and used by [`rog_dialog_data_process.py`](../rog_dialog_data_process.py), [`rog_art_data_process.py`](../rog_art_data_process.py), [`ccpcl_data_process.py`](../ccpcl_data_process.py), and the configurable path in [`convert_trs_to_trim_rttm.py`](../convert_trs_to_trim_rttm.py).
 
-## **3\. Tunable Parameters**
+### `merge_threshold` = 1.0 s
 
-The conversion script convert\_trs\_to\_rttm.py uses the following parameters:
+Maximum silence between two segments of the **same** speaker (with no other speaker between) that will still be merged into one segment.
 
-### **MERGE\_THRESHOLD \= 1.0s**
+### `min_duration` = 0.1 s
 
-* **Definition:** The maximum duration of silence between two segments of the same speaker that will be merged into a single segment.  
-* **Reasoning:** Analysis showed that raw annotations often break segments at pauses around 0.5s \- 0.8s. A threshold of 1.0s effectively groups sentences into coherent turns without falsely merging distinct conversational turns separated by significant silence.
+Segments shorter than this are dropped after merging, to suppress ultra-short noise clicks and breath marks that dominate false-alarm style errors.
 
-### **MIN\_DURATION \= 0.1s**
+## 4. Output format (RTTM)
 
-* **Definition:** Segments shorter than this duration are discarded.  
-* **Reasoning:** Manual annotations often contain click sounds, short breaths, or noise marked as speech segments. These micro-segments (\<100ms) are generally below the resolution of standard diarization models and create noise in the DER (Diarization Error Rate) metric (specifically False Alarm errors).
-
-## **4\. Output Format (RTTM)**
-
-The output follows the standard NIST RTTM format:
+Output follows the NIST RTTM convention:
 
 ```
-
 SPEAKER <file_id> 1 <onset> <duration> <NA> <NA> <speaker_id> <NA> <NA>
-
 ```
 
-*   
-  **File ID:** Normalized filename (removed \_std/\_pog suffixes).  
-* **Channel:** Hardcoded to 1 (Mono).  
-* **Speaker ID:** Original speaker IDs from the TRS header (e.g., ROG-dialog-0007).
+* **File ID:** normalised recording id (for example `-std` / `-pog` stripped from TRS names).
+* **Channel:** fixed to `1` (mono).
+* **Speaker ID:** as in the source annotation (TRS / CHAT).
 
-## **5\. Reproducibility**
+## 5. Reproducibility (dataset scripts and basenames)
 
-To regenerate the gold standard RTTM file:
+Shell wrappers under the repo root download or extract data and call the matching `*_data_process.py`. Optional **first positional argument** on `prepare_data_rog_dialog.sh`, `prepare_data_rog_art.sh`, and `prepare_data_ccpcl.sh`: gold RTTM **basename** under `data/<dataset>/ref_rttm/` (`.rttm` is appended if missing).
 
-1. Ensure the data/ROG-Dialog/annotations/trs or data/ROG-Art/annotations/trs directory is populated.  
-2. Run the dataset-specific conversion script:
+| Dataset | Default basename | Example |
+| --- | --- | --- |
+| ROG-Dialog / ROG-Art | `default_gold_standard` | `./prepare_data_rog_dialog.sh my_run` → `ref_rttm/my_run.rttm` |
+| CHILDES-CCPCL | `ccpcl_gold_standard` | `./prepare_data_ccpcl.sh my_ccpcl` → `ref_rttm/my_ccpcl.rttm` |
 
-```
-python rog_dialog_data_process.py --output_filename gold_standard
-```
+Direct Python invocation (after directories are populated):
 
-or
-
-```
-python rog_art_data_process.py --output_filename gold_standard
-```
-
-3. The output will be saved as:
-   - data/ROG-Dialog/ref_rttm/gold_standard.rttm or
-   - data/ROG-Art/ref_rttm/gold_standard.rttm or
-   - data/CHILDES-CCPCL/ref_rttm/ccpcl_gold_standard.rttm
-
-For CCPCL, use:
-```
-python ccpcl_data_process.py --cha_dir data/raw/CCPCL/CCPCL --output_file data/CHILDES-CCPCL/ref_rttm/ccpcl_gold_standard.rttm
+```bash
+python3 rog_dialog_data_process.py --output_filename gold_standard
+python3 rog_art_data_process.py --output_filename gold_standard
+python3 ccpcl_data_process.py \
+  --cha_dir data/raw/CCPCL/CCPCL \
+  --audio_dir data/CHILDES-CCPCL/audio \
+  --output_file data/CHILDES-CCPCL/ref_rttm/ccpcl_gold_standard.rttm
 ```
 
+With trimming enabled inside the gold generators, add `--enable_trimming` where supported; a companion `*_trimmed.rttm` is written next to the primary output (see `trimmed_rttm_path` in `gold_rttm_from_annotations.py`).
 
+Operator-oriented steps: [Data preparation](data_preparation.md).
+
+## 6. Standalone CLI: `trim_gold_silences_rttm.py`
+
+[`trim_gold_silences_rttm.py`](../trim_gold_silences_rttm.py) trims existing gold RTTM segment boundaries using WAV evidence (Praat / Parselmouth pipeline). Defaults below match `parse_args()` in that file (run `python3 trim_gold_silences_rttm.py --help` for the live list).
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--rttm` | `data/ROG-Dialog/ref_rttm/gold_standard.rttm` | Input RTTM |
+| `--audio-dir` | `data/ROG-Dialog/audio` | Directory containing `<file_id>.wav` for each RTTM file id |
+| `--output` | `data/ROG-Dialog/ref_rttm/gold_trimmed.rttm` | Output RTTM path |
+| `--pitch-floor` | `75.0` | Hz |
+| `--pitch-ceiling` | `500.0` | Hz |
+| `--intensity-drop-db` | `15.0` | dB drop for intensity-based boundary |
+| `--guard-ms` | `30.0` | ms guard from each boundary |
+| `--max-trim` | `1.5` | max seconds removed per segment edge |
+| `--min-duration` | `0.1` | minimum kept segment duration (s) |
+| `--pad` | `0.5` | pad (s) |
+| `--time-step` | `0.01` | analysis step (s) |
+| `--method` | `pitch_or_intensity` | One of `pitch_or_intensity`, `pitch_only`, `intensity_only` |
+| `--trim-silence-within` | off | If set, trim / split internal silence using `--min-silence-dur` |
+| `--min-silence-dur` | `0.5` | Minimum silence duration (s) for internal cuts |
+| `--test-run` | off | Process only the first file id in the RTTM |
+| `--verbose` | off | Verbose per-segment logging |
+
+The tool also writes metadata beside the output: `<output_basename>_metadata.txt` (same directory, stem derived from `--output`).
+
+**Example (CCPCL):**
+
+```bash
+python3 trim_gold_silences_rttm.py \
+  --rttm data/CHILDES-CCPCL/ref_rttm/ccpcl_gold_standard.rttm \
+  --audio-dir data/CHILDES-CCPCL/audio \
+  --output data/CHILDES-CCPCL/ref_rttm/ccpcl_gold_trimmed.rttm \
+  --trim-silence-within
+```
+
+**Example (ROG-Dialog, defaults only):**
+
+```bash
+python3 trim_gold_silences_rttm.py
+```

@@ -35,7 +35,7 @@ DEST_DIRS = {
 
 def find_multi_speaker_recordings(metadata_file: Path):
     if not metadata_file.exists():
-        print(f"Metadata ni najden: {metadata_file}")
+        print(f"Metadata not found: {metadata_file}")
         return set()
 
     multi = set()
@@ -67,7 +67,7 @@ def copy_files(src_dir: Path, dst_dir: Path, pattern="*"):
 
 
 def reorganize_dataset(multi_speaker_ids: set):
-    print(f"=== 1. Ustvarjam ciljno strukturo: data/{DATASET_NAME} ===")
+    print(f"=== 1. Creating target layout: data/{DATASET_NAME} ===")
     for d in DEST_DIRS.values():
         if d.exists():
             shutil.rmtree(d)
@@ -81,7 +81,7 @@ def reorganize_dataset(multi_speaker_ids: set):
             if base in multi_speaker_ids:
                 shutil.copy2(wav_file, DEST_DIRS["audio"] / wav_file.name)
                 n_audio += 1
-    print(f"Kopiranih WAV (multi-govorniki): {n_audio}")
+    print(f"Copied WAV files (multi-speaker): {n_audio}")
 
     n_trs = 0
     n_exb = 0
@@ -105,7 +105,7 @@ def reorganize_dataset(multi_speaker_ids: set):
             shutil.copy2(exs_file, DEST_DIRS["exs"] / exs_file.name)
             n_exs += 1
 
-    print(f"Kopiranih TRS: {n_trs}, EXB: {n_exb}, EXS: {n_exs}")
+    print(f"Copied TRS: {n_trs}, EXB: {n_exb}, EXS: {n_exs}")
 
     docs_src = SOURCE_PATHS["metadata"]
     if docs_src.exists():
@@ -117,7 +117,7 @@ def reorganize_dataset(multi_speaker_ids: set):
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(p, dst)
                 copied_docs += 1
-        print(f"Kopiranih dokumentov: {copied_docs}")
+        print(f"Copied documents: {copied_docs}")
 
 
 def is_dataset_organized(multi_speaker_ids: set):
@@ -138,7 +138,7 @@ def is_dataset_organized(multi_speaker_ids: set):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Prepare ROG-Art data subset (multi-speaker) and generate filtered RTTM gold standard",
+        description="Prepare ROG-Art multi-speaker subset and generate gold RTTM from TRS annotations.",
         epilog="Example: python3 rog_art_data_process.py --merge_threshold 1.0 --min_duration 0.1 "
         "--prioritize_pog false --output_filename myconfig --force_reorganize",
     )
@@ -176,7 +176,8 @@ def main():
         "--enable_trimming",
         action="store_true",
         default=False,
-        help="Also write <name>_trimmed.rttm using Parselmouth (requires numpy, praat-parselmouth). "
+        help="Also write <name>_trimmed.rttm using Parselmouth (requires numpy, praat-parselmouth; "
+        "optional uv setup: docs/data_preparation.md#python-environment-uv). "
         "Uses dataset audio under data/ROG-Art/audio.",
     )
     args = parser.parse_args()
@@ -186,20 +187,20 @@ def main():
         fallback_metadata = DEST_DIRS["docs"] / "ROG-speeches.tsv"
         if fallback_metadata.exists():
             metadata_file = fallback_metadata
-            print(f"Metadata izvor ni najden, preklop na reorganizirano pot: {metadata_file}")
+            print(f"Metadata source not found; using reorganized path: {metadata_file}")
 
-    print("=== Identifikacija posnetkov z 2+ govorcev ===")
+    print("=== Identifying recordings with 2+ speakers ===")
     multi_speaker = find_multi_speaker_recordings(metadata_file)
-    print(f"Najdenih posnetkov z vsaj 2 govorci (Rog-Art): {len(multi_speaker)}")
+    print(f"Recordings with at least 2 speakers (ROG-Art): {len(multi_speaker)}")
     if multi_speaker:
         for r in sorted(multi_speaker):
             print(" -", r)
 
     if args.force_reorganize or not is_dataset_organized(multi_speaker):
-        print("Dataset se reorganizira.")
+        print("Reorganizing dataset.")
         reorganize_dataset(multi_speaker)
     else:
-        print("Dataset že reorganiziran. Preskočim reorganization.")
+        print("Dataset already organized. Skipping reorganization.")
 
     final_name = args.output_filename if args.output_filename.endswith(".rttm") else f"{args.output_filename}.rttm"
     output_path = DEST_DIRS["ref_rttm"] / final_name

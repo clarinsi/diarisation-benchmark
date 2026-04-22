@@ -1,10 +1,14 @@
 #!/bin/bash
+# Turn off xtrace so wrappers (e.g. an old "bash -x" habit) do not leak debug noise to users.
+set +x
 set -e
 
 DATASET_NAME="CHILDES-CCPCL"
 RAW_DIR="data/raw"
 DEST_DIR="data/$DATASET_NAME"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# May be multiple words, e.g. "uv run --group trim python" — do not quote when invoking.
+: "${DIABENCH_PYTHON:=python3}"
 
 # Benchmark sample (20 sessions). Replication requires these exact WAV stems.
 EXPECTED_WAV_STEMS=(
@@ -47,7 +51,7 @@ After signing in, download the CCPCL.zip archive and place it at:
   $RAW_DIR/CCPCL.zip
 
 Then rerun:
-  ./prepare_data_ccpcl.sh
+  ./prepare_data_ccpcl.sh [optional_gold_basename]
 EOF
     exit 1
 fi
@@ -73,32 +77,61 @@ fi
 
 wav_count=$(find "$DEST_DIR/audio" -maxdepth 2 -type f -iname "*.wav" | wc -l)
 
+OUTPUT_FILENAME="${1:-ccpcl_gold_standard}"
+if [[ "$OUTPUT_FILENAME" != *.rttm ]]; then
+    OUTPUT_FILENAME="$OUTPUT_FILENAME.rttm"
+fi
+mkdir -p "$DEST_DIR/ref_rttm"
+OUTPUT_PATH="$DEST_DIR/ref_rttm/$OUTPUT_FILENAME"
+
 if [ "$wav_count" -gt 0 ]; then
     echo "=== Found $wav_count .wav files in $DEST_DIR/audio ==="
 
-    expected_sorted="$(printf '%s\n' "${EXPECTED_WAV_STEMS[@]}" | LC_ALL=C sort -u)"
+    # Normalized sorted stem lists (strip CRLF, drop blank lines) for reliable comm/compare.
+    expected_sorted="$(printf '%s\n' "${EXPECTED_WAV_STEMS[@]}" | LC_ALL=C sort -u | tr -d '\r' | sed '/^$/d')"
     actual_sorted="$(find "$DEST_DIR/audio" -maxdepth 2 -type f -iname "*.wav" -printf '%f\n' \
         | sed -E 's/\.[Ww][Aa][Vv]$//' \
-        | LC_ALL=C sort -u)"
+        | LC_ALL=C sort -u | tr -d '\r' | sed '/^$/d')"
 
-    missing="$(comm -23 <(printf '%s\n' "$expected_sorted") <(printf '%s\n' "$actual_sorted"))"
-    extra="$(comm -13 <(printf '%s\n' "$expected_sorted") <(printf '%s\n' "$actual_sorted"))"
+    expected_n="$(printf '%s\n' "$expected_sorted" | sed '/^$/d' | wc -l | tr -d ' ')"
+    actual_n="$(printf '%s\n' "$actual_sorted" | sed '/^$/d' | wc -l | tr -d ' ')"
+
+    echo "Benchmark WAV stems (required, N=${expected_n}):"
+    if [ -z "$expected_sorted" ]; then
+        echo "  (none)"
+    else
+        printf '%s\n' "$expected_sorted" | sed 's/^/  - /'
+    fi
+    echo
+    echo "WAV stems found under $DEST_DIR/audio (N=${actual_n}):"
+    if [ -z "$actual_sorted" ]; then
+        echo "  (none)"
+    else
+        printf '%s\n' "$actual_sorted" | sed 's/^/  - /'
+    fi
+    echo
+
+    missing="$(comm -23 <(printf '%s\n' "$expected_sorted") <(printf '%s\n' "$actual_sorted") | sed '/^$/d')"
+    extra="$(comm -13 <(printf '%s\n' "$expected_sorted") <(printf '%s\n' "$actual_sorted") | sed '/^$/d')"
 
     if [ -n "$missing" ] || [ -n "$extra" ]; then
         echo "=== WARNING: WAV filename set does not match the benchmark sample ==="
-        echo "Replication requires EXACTLY the WAV files with these stems (N=$(printf '%s\n' "$expected_sorted" | wc -l)):"
-        printf '%s\n' "$expected_sorted" | sed 's/^/  - /'
+        echo "Replication uses exactly the benchmark stems above. Differences:"
         echo
-        if [ -n "$missing" ]; then
-            echo "Missing WAV stems (present in benchmark list, not found in $DEST_DIR/audio):"
-            printf '%s\n' "$missing" | sed 's/^/  - /'
-            echo
+        echo "Missing (in benchmark, not on disk as <stem>.wav):"
+        if [ -z "$missing" ]; then
+            echo "  (none)"
+        else
+            printf '%s\n' "$missing" | sed '/^$/d' | sed 's/^/  - /'
         fi
-        if [ -n "$extra" ]; then
-            echo "Extra WAV stems (found in $DEST_DIR/audio, not in benchmark list):"
-            printf '%s\n' "$extra" | sed 's/^/  - /'
-            echo
+        echo
+        echo "Extra (on disk, not in benchmark list):"
+        if [ -z "$extra" ]; then
+            echo "  (none)"
+        else
+            printf '%s\n' "$extra" | sed '/^$/d' | sed 's/^/  - /'
         fi
+        echo
 
         read -rp "Continue and generate gold RTTM anyway? [y/N]: " answer
         case "$answer" in
@@ -110,7 +143,7 @@ if [ "$wav_count" -gt 0 ]; then
                 ;;
         esac
     else
-        echo "=== WAV set matches benchmark sample (N=$(printf '%s\n' "$expected_sorted" | wc -l)) ==="
+        echo "=== WAV set matches benchmark sample (N=${expected_n}) ==="
         read -rp "Generate gold RTTM from CCPCL transcripts now? [y/N]: " answer
         case "$answer" in
             [Yy]*)
@@ -122,22 +155,23 @@ if [ "$wav_count" -gt 0 ]; then
         esac
     fi
 
-    echo "Running ccpcl_data_process.py ..."
+    echo "Running ccpcl_data_process.py (output: $OUTPUT_PATH) ..."
     CHA_DIR="$RAW_DIR/CCPCL"
     if [ -d "$RAW_DIR/CCPCL/CCPCL" ]; then
         CHA_DIR="$RAW_DIR/CCPCL/CCPCL"
     fi
     # merge_threshold / min_duration: omitted → argparse defaults from gold_rttm_from_annotations
-    read -rp "Enable silence trimming (requires numpy + praat-parselmouth)? [Y/n]: " TRIM_ANS
+    read -rp "Enable silence trimming (requires numpy + praat-parselmouth; uv: docs/data_preparation.md)? [Y/n]: " TRIM_ANS
     TRIM_FLAGS=()
     case "${TRIM_ANS:-Y}" in
         [Nn]*|[Nn]) ;;
         *) TRIM_FLAGS=(--enable_trimming) ;;
     esac
-    python3 "$SCRIPT_DIR/ccpcl_data_process.py" "${TRIM_FLAGS[@]}" \
+    # shellcheck disable=SC2086
+    $DIABENCH_PYTHON "$SCRIPT_DIR/ccpcl_data_process.py" "${TRIM_FLAGS[@]}" \
         --cha_dir "$CHA_DIR" \
         --audio_dir "$DEST_DIR/audio" \
-        --output_file "$DEST_DIR/ref_rttm/ccpcl_gold_standard.rttm"
+        --output_file "$OUTPUT_PATH"
 else
     cat <<EOF
 === No WAV files found in $DEST_DIR/audio ===
@@ -146,7 +180,7 @@ https://media.talkbank.org/childes/Slavic/Croatian/CCPCL/0wav
 and place them in:
   $DEST_DIR/audio
 Then rerun:
-  ./prepare_data_ccpcl.sh
+  ./prepare_data_ccpcl.sh [optional_gold_basename]
 EOF
 fi
 

@@ -1,0 +1,32 @@
+[project]
+name = "diarisation-benchmark"
+version = "0.0.0"
+description = "Benchmark tooling: optional uv groups for silence trimming (data prep)."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[dependency-groups]
+trim = [
+    "numpy",
+    "praat-parselmouth",
+]
+trim-exb = [
+    "lxml",
+    "exbee @ git+https://github.com/5roop/exbee.git@283de62f47166dbe6ba8bdabe4eaea0a8ed50eb0#subdirectory=exbee",
+]
+
+[tool.uv]
+package = false
+
+# OS / distro packages — documentation only. uv and pip do not install these.
+# Install with your system package manager when `praat-parselmouth` builds from
+# source (common on linux-aarch64: no binary wheel). Match `python3.*-dev` to
+# the same CPython minor version uv uses (`uv python pin` / `python3 --version`).
+[tool.diarisation-benchmark.system-packages]
+debian = [
+    "build-essential",
+    "cmake",
+    "ninja-build",
+    "python3-dev",
+]

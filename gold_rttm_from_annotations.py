@@ -87,7 +87,8 @@ def _try_load_trimmer() -> tuple[dict[str, Any] | None, str | None]:
         name = getattr(e, "name", None) or str(e).split()[-1] if str(e) else "unknown"
         msg = (
             f"Silence trimming skipped: import failed ({e!r}; module={name!r}). "
-            "Install with: pip install numpy praat-parselmouth"
+            "Install with: pip install numpy praat-parselmouth — or use uv: "
+            "see docs/data_preparation.md#python-environment-uv"
         )
         return None, msg
     try:

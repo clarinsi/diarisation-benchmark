@@ -132,7 +132,7 @@ def main():
     if gaps_a > 500 and gaps_b < 100:
         print("-> CONCLUSION: File B likely uses aggressive smoothing/merging.")
     elif gaps_b > 500 and gaps_a < 100:
-         print("-> CONCLUSION: File A likely uses aggressive smoothing/merging.")
+        print("-> CONCLUSION: File A likely uses aggressive smoothing/merging.")
     elif abs(gaps_a - gaps_b) < 100:
         print("-> CONCLUSION: Similar smoothing strategies used.")
 

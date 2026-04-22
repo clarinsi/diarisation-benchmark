@@ -8,3 +8,5 @@ data/*
 notes
 *.log
 __pycache__/
+.venv/
+evaluation/.venv/

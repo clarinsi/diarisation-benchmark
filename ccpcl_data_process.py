@@ -50,7 +50,8 @@ def main():
         "--enable_trimming",
         action="store_true",
         default=False,
-        help="Also write <name>_trimmed.rttm using Parselmouth (requires numpy, praat-parselmouth).",
+        help="Also write <name>_trimmed.rttm using Parselmouth (requires numpy, praat-parselmouth; "
+        "optional uv setup: docs/data_preparation.md#python-environment-uv).",
     )
     args = parser.parse_args()
 

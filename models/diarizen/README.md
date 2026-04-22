@@ -27,10 +27,11 @@ docker build -t benchmark-diarizen .
 ```
 docker run --gpus all --rm \
   -v "$(pwd)/../../data/ROG-Dialog/audio:/data/audio" \
-  -v "$(pwd)/../../results/diarizen_v2:/data/output" \
+  -v "$(pwd)/../../results/ROG-Dialog/diarizen_v2:/data/output" \
   -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
   -e HOST_UID=$(id -u) \
   -e HOST_GID=$(id -g) \
+  -e HF_TOKEN="YOUR_HUGGINGFACE_TOKEN" \
   benchmark-diarizen \
   --input /data/audio \
   --output /data/output \

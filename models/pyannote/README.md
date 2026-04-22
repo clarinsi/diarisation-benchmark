@@ -34,7 +34,7 @@ Local models load heavy weights into your GPU. **Best Practice:** Mount your loc
 
 docker run --gpus all --rm \
   -v "$(pwd)/data/ROG-Dialog/audio:/data/audio" \
-  -v "$(pwd)/results/pyannote_3_1:/data/output" \
+  -v "$(pwd)/results/ROG-Dialog/pyannote_3_1:/data/output" \
   -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
   -e HOST_UID=$(id -u) \
   -e HOST_GID=$(id -g) \
@@ -56,7 +56,7 @@ To run this, pass your **PyAnnote API Key** into the HF\_TOKEN environment varia
 
 docker run --rm \
   -v "$(pwd)/data/ROG-Dialog/audio:/data/audio" \
-  -v "$(pwd)/results/pyannote_precision_2:/data/output" \
+  -v "$(pwd)/results/ROG-Dialog/speaker-diarization-precision-2:/data/output" \
   -e HOST_UID=$(id -u) \
   -e HOST_GID=$(id -g) \
   -e HF_TOKEN="YOUR_PYANNOTE_API_KEY" \

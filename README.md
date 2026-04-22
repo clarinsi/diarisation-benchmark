@@ -18,27 +18,38 @@ We currently support three datasets:
 
 - **CHILDES Croatian Corpus of Preschool Child Language (CCPCL)**
   - source: requires registration/login via https://talkbank.org/childes/access/Slavic/Croatian/CCPCL.html
-  - download archive manually to `data/raw/CCPCL.zip`, then run `./prepare_data_ccpcl.sh`
+  - download archive manually to `data/raw/CCPCL.zip`, then run `./prepare_data_ccpcl.sh` (optional first argument: gold RTTM basename, default `ccpcl_gold_standard`; see [docs/data_preparation.md](docs/data_preparation.md))
   - `prepare_data_ccpcl.sh` extracts to `data/raw/CCPCL`, validates `.wav` availability and optionally runs `ccpcl_data_process.py`
-  - `ccpcl_data_process.py` reads `data/raw/CCPCL/CCPCL/*.cha`, creates `data/CHILDES-CCPCL/ref_rttm/ccpcl_gold_standard.rttm` with same merge/min merging logic
+  - `ccpcl_data_process.py` reads `data/raw/CCPCL/CCPCL/*.cha` (or nested layout resolved by the shell script), writes `data/CHILDES-CCPCL/ref_rttm/<basename>.rttm` with the same merge/min-duration defaults as other datasets
 
 ## Models
 
-Explicit supported model names:
+Explicit supported model names (canonical Hugging Face or vendor ids), as stored in each run’s `benchmark_metadata.json` under `model_name`:
 
-- nvidia/diar_sortformer_4spk-v1
-- nvidia/diar_streaming_sortformer_4spk-v2
-- nvidia/diar_streaming_sortformer_4spk-v2.1
-- pyannote/speaker-diarization-3.1
-- pyannote/speaker-diarization-community-1
-- pyannote/speaker-diarization-precision-2
-- Revai/reverb-diarization-v2
+**NVIDIA NeMo (Sortformer)**
 
-These entries are loaded from `results/<model_folder>/benchmark_metadata.json` (the `model_name` property inside each file).
+- `nvidia/diar_sortformer_4spk-v1`
+- `nvidia/diar_streaming_sortformer_4spk-v2`
+- `nvidia/diar_streaming_sortformer_4spk-v2.1`
 
-Planned/in development support (WIP):
+**PyAnnote**
 
-- BUT-FIT diaryzen-wavlm-large-s80-md: https://huggingface.co/BUT-FIT/diarizen-wavlm-large-s80-md
+- `pyannote/speaker-diarization-3.1`
+- `pyannote/speaker-diarization-community-1`
+- `pyannote/speaker-diarization-precision-2`
+
+**Revai**
+
+- `Revai/reverb-diarization-v2`
+
+**DiariZen**
+
+- `BUT-FIT/diarizen-wavlm-large-s80-md`
+- `BUT-FIT/diarizen-wavlm-large-s80-md-v2`
+
+Metadata for reporting is read from `results/<Dataset>/<run_folder>/benchmark_metadata.json` (for example `results/ROG-Dialog/pyannote_3_1/benchmark_metadata.json`). The `run_folder` names in the repo mirror the benchmark layout (e.g. `diarizen`, `diar_streaming_sortformer_4spk-v2`, `speaker-diarization-precision-2`).
+
+Inference backends: `models/pyannote/`, `models/nemo/`, `models/diarizen/`, and Revai via the pyannote container where applicable—see each module’s README.
 
 
 ## Evaluation
@@ -51,7 +62,7 @@ The report includes:
 - Jaccard Error Rate (JER) and boundary precision/recall/F1 (boundary tolerance configurable)
 - purity / coverage and per-talk evaluation
 - model-specific latency and real-time factor
-- summarization of all models from configured `results/*/benchmark_metadata.json`
+- summarization of all models from `benchmark_metadata.json` files under the configured results directory (typically `results/<Dataset>/<run_folder>/`)
 
 The first iteration uses the existing reference RTTM outputs and computes diarisations with DER as primary metric.
 
@@ -59,6 +70,9 @@ Additional report controls:
 - `--boundary_tolerance` controls boundary P/R/F1 tolerance window (seconds)
 - `--analysis_collar` controls which collar is used for domain plots and domain comparison tables (snapped to nearest value in `COLLAR_SETTINGS`)
 
+## Python environments (uv)
+
+Optional [uv](https://docs.astral.sh/uv/) setups isolate **silence-trimming** dependencies (Parselmouth) and the **evaluation** stack from your system Python. Install **uv** first if it is missing (see [Installing uv](docs/data_preparation.md#installing-uv)), then follow [Python environment (uv)](docs/data_preparation.md#python-environment-uv): `uv sync --group trim` at the repo root, `export DIABENCH_PYTHON="uv run --group trim python"` before `./prepare_data.sh …`, and `cd evaluation && uv sync` for reports. Remove the envs when finished: `rm -rf .venv` (repo root) and `rm -rf evaluation/.venv`.
 
 
 # Peter : Running the pipeline through and through
@@ -81,7 +95,7 @@ Additional report controls:
     ```bash
     sudo docker run --rm \
         -v "$(pwd)/data/ROG-Dialog/audio:/data/audio" \
-        -v "$(pwd)/results/pyannote_3_1:/data/output" \
+        -v "$(pwd)/results/ROG-Dialog/pyannote_3_1:/data/output" \
         -e HOST_UID=$(id -u) \
         -e HOST_GID=$(id -g) \
         -e HF_TOKEN="YOURTOKEN" \
@@ -110,7 +124,7 @@ Additional report controls:
     ```bash
     sudo docker run --rm \
         -v "$(pwd)/data/ROG-Dialog/audio:/data/audio" \
-        -v "$(pwd)/results/nemo_v2:/data/output" \
+        -v "$(pwd)/results/ROG-Dialog/diar_streaming_sortformer_4spk-v2:/data/output" \
         -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
         -e HOST_UID=$(id -u) \
         -e HOST_GID=$(id -g) \
@@ -122,7 +136,29 @@ Additional report controls:
 
     This runs faster, with RTF of 0.1 cca.
 
-4. Run the eval
+4. DiariZen models:
+
+   Build and run as in [models/diarizen/README.md](models/diarizen/README.md) (CPU-oriented image; mount `results/ROG-Dialog/diarizen` or `results/ROG-Dialog/diarizen_v2` for output). Example:
+
+   ```bash
+   cd models/diarizen
+   docker build -t benchmark-diarizen .
+   cd ../..
+
+   sudo docker run --rm \
+     -v "$(pwd)/data/ROG-Dialog/audio:/data/audio" \
+     -v "$(pwd)/results/ROG-Dialog/diarizen_v2:/data/output" \
+     -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
+     -e HOST_UID=$(id -u) \
+     -e HOST_GID=$(id -g) \
+     -e HF_TOKEN="YOURTOKEN" \
+     benchmark-diarizen \
+     --input /data/audio \
+     --output /data/output \
+     --model BUT-FIT/diarizen-wavlm-large-s80-md-v2
+   ```
+
+5. Run the eval
 
 ```bash
 cd evaluation
@@ -131,7 +167,7 @@ cd ..
 
 sudo docker run --rm \
   -v "$(pwd)/data/ROG-Dialog:/data/rog" \
-  -v "$(pwd)/results:/data/results" \
+  -v "$(pwd)/results/ROG-Dialog:/data/results" \
   -v "$(pwd)/reports:/data/reports" \
   -v "$(pwd)/evaluation/DATASET_ERRATA.json:/app/DATASET_ERRATA.json" \
   -e HOST_UID=$(id -u) -e HOST_GID=$(id -g) \

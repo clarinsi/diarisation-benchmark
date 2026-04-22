@@ -35,7 +35,7 @@ This model uses a sliding window approach. It is extremely fast (RTF \~0.006) an
 
 docker run --gpus all --rm \
   -v "$(pwd)/data/ROG-Dialog/audio:/data/audio" \
-  -v "$(pwd)/results/nemo_v2:/data/output" \
+  -v "$(pwd)/results/ROG-Dialog/diar_streaming_sortformer_4spk-v2:/data/output" \
   -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
   -e HOST_UID=$(id -u) \
   -e HOST_GID=$(id -g) \
@@ -57,7 +57,7 @@ This model uses **Global Attention**. Memory usage grows quadratically ($O(T^2)$
 
 docker run --gpus all --rm \
   -v "$(pwd)/data/ROG-Dialog/audio:/data/audio" \
-  -v "$(pwd)/results/nemo_v1:/data/output" \
+  -v "$(pwd)/results/ROG-Dialog/diar_sortformer_4spk-v1:/data/output" \
   -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
   -e HOST_UID=$(id -u) -e HOST_GID=$(id -g) \
   benchmark-nemo \

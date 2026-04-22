@@ -1,5 +1,5 @@
 #!/bin/bash
-
+set +x
 # Prekini izvajanje ob napaki
 set -e
 
@@ -77,14 +77,17 @@ fi
 
 echo "=== 6. Generating gold RTTM ==="
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# May be multiple words, e.g. "uv run --group trim python" — do not quote when invoking.
+: "${DIABENCH_PYTHON:=python3}"
 # merge_threshold / min_duration / prioritize_pog: omitted → defaults in gold_rttm_from_annotations
-read -rp "Enable silence trimming (requires numpy + praat-parselmouth)? [Y/n]: " TRIM_ANS
+read -rp "Enable silence trimming (requires numpy + praat-parselmouth; uv: docs/data_preparation.md)? [Y/n]: " TRIM_ANS
 TRIM_FLAGS=()
 case "${TRIM_ANS:-Y}" in
     [Nn]*|[Nn]) ;;
     *) TRIM_FLAGS=(--enable_trimming) ;;
 esac
-python3 "$SCRIPT_DIR/rog_dialog_data_process.py" "${TRIM_FLAGS[@]}" --output_filename "$OUTPUT_FILENAME"
+# shellcheck disable=SC2086
+$DIABENCH_PYTHON "$SCRIPT_DIR/rog_dialog_data_process.py" "${TRIM_FLAGS[@]}" --output_filename "$OUTPUT_FILENAME"
 
 echo "=== Script finished: $DATASET_NAME preparation completed ==="
 echo "Dataset $DATASET_NAME is ready."
