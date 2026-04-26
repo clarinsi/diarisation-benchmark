@@ -157,7 +157,7 @@ def get_audio_duration(file_path):
         with sf.SoundFile(file_path) as f:
             return f.frames / f.samplerate
     except Exception as e:
-        log(f"Warning: Could not read duration for {file_path}: {e}")
+        log(f"WARNING: Could not read duration for {file_path}: {e}")
         return 0.0
 
 def save_metadata(output_dir, stats):

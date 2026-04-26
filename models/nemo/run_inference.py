@@ -198,7 +198,7 @@ def run_inference(input_dir, output_dir, hf_token, device="cuda", model_name="nv
         # --- PREVERJANJE DOLŽINE (OOM GUARD) ---
         dur = get_audio_duration(audio_path)
         if max_duration > 0 and dur > max_duration:
-            log(f"[{i+1}/{len(audio_files)}] SKIPPING {filename}: Duration {dur:.1f}s > limit {max_duration}s")
+            log(f"[{i+1}/{len(audio_files)}] Skipping {filename}: Duration {dur:.1f}s > limit {max_duration}s")
             
             # Zabeležimo skip v JSON, da ga naslednjič ne preverjamo spet
             file_stat = {

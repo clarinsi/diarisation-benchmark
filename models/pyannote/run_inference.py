@@ -22,6 +22,15 @@ from pathlib import Path
 from pyannote.audio import Pipeline
 from pyannote.audio.pipelines.utils.hook import ProgressHook
 
+
+def _pipeline_rejects_hook_kwarg(exc: BaseException) -> bool:
+    """True when pipeline/SDK does not accept hook= (e.g. remote API pipelines)."""
+    if not isinstance(exc, TypeError):
+        return False
+    msg = str(exc).lower()
+    return "hook" in msg and "unexpected keyword argument" in msg
+
+
 def fix_permissions(path, uid, gid):
     """Rekurzivno spremeni lastništvo datotek in map."""
     print(f"Fixing permissions for {path} -> {uid}:{gid}...", flush=True)
@@ -71,7 +80,7 @@ def get_audio_duration(file_path):
         with sf.SoundFile(file_path) as f:
             return f.frames / f.samplerate
     except Exception as e:
-        log(f"Warning: Could not get duration via soundfile for {file_path}: {e}")
+        log(f"WARNING: Could not get duration via soundfile for {file_path}: {e}")
         return 0.0
     
 def get_peak_memory_mb():
@@ -96,7 +105,7 @@ def load_file_metadata(output_dir, filename):
 
 def run_inference(input_dir, output_dir, hf_token, device="cuda", model_name="pyannote/speaker-diarization-3.1"):
     log(f"--- STARTING BENCHMARK ---")
-    log(f"Target Model: {model_name}")
+    log(f"Model: {model_name}")
     
     if torch.cuda.is_available():
         log(f"CUDA is available! Found {torch.cuda.device_count()} devices.")
@@ -104,7 +113,7 @@ def run_inference(input_dir, output_dir, hf_token, device="cuda", model_name="py
         # Resetiramo statistiko na začetku
         torch.cuda.reset_peak_memory_stats()
     else:
-        log("!!! WARNING: CUDA IS NOT AVAILABLE !!!")
+        log("WARNING: CUDA not available, falling back to CPU.")
         if device == "cuda":
             device = "cpu"
 
@@ -113,7 +122,7 @@ def run_inference(input_dir, output_dir, hf_token, device="cuda", model_name="py
 
     # 1. Pipeline Loading
     load_start = time.time()
-    log(f"Loading PyAnnote pipeline: {model_name}...")
+    log(f"Loading pyannote pipeline: {model_name}...")
     
     try:
         pipeline = Pipeline.from_pretrained(
@@ -154,6 +163,8 @@ def run_inference(input_dir, output_dir, hf_token, device="cuda", model_name="py
     total_proc_time = 0.0
     total_audio_dur = 0.0
     global_max_vram = model_vram_mb
+    # Sticky per-run: same pipeline for all files; remote SDK may reject hook=.
+    supports_progress_hook: bool | None = None
 
     # 3. Inference Loop
     for i, audio_path in enumerate(audio_files):
@@ -193,9 +204,26 @@ def run_inference(input_dir, output_dir, hf_token, device="cuda", model_name="py
 
         try:
             # --- INFERENCE ---
-            with ProgressHook() as hook:
-                result = pipeline(audio_path, hook=hook)
-            
+            if supports_progress_hook is False:
+                result = pipeline(audio_path)
+            elif supports_progress_hook is True:
+                with ProgressHook() as hook:
+                    result = pipeline(audio_path, hook=hook)
+            else:
+                try:
+                    with ProgressHook() as hook:
+                        result = pipeline(audio_path, hook=hook)
+                    supports_progress_hook = True
+                except TypeError as e:
+                    if not _pipeline_rejects_hook_kwarg(e):
+                        raise
+                    log(
+                        "Progress hook not supported for this pipeline; "
+                        "running without hook for remaining files."
+                    )
+                    supports_progress_hook = False
+                    result = pipeline(audio_path)
+
             # --- API ADAPTATION ---
             annotation = None
             if hasattr(result, "speaker_diarization"):

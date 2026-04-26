@@ -10,13 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Diarizen inference backend** (`models/diarizen/`): Dockerfile, README, and `run_inference.py`
-- **Benchmark outputs:** reorganized `results/` layout; CCPCL and ROG-Art RTTMs and `benchmark_metadata.json` for NeMo/pyannote-style runs; additional missing result files committed
+- **Benchmark outputs:** reorganized `results/`; CCPCL and ROG-Art RTTMs and `benchmark_metadata.json` (ROG-Art run folders: `pyannote_3_1`, `pyannote_community_1`, `speaker-diarization-precision-2`, `reverb-diarization-v2`, `diarizen`, `diarizen_v2`, `diar_sortformer_4spk-v1`, `diar_streaming_sortformer_4spk-v2`, `diar_streaming_sortformer_4spk-v2.1`)
 - **Data prep dispatcher:** `prepare_data.sh` lists/runs root `prepare_data_<dataset>.sh` scripts; `docs/data_preparation.md` documents workflows and uv-based trim environments
 - **uv lockfiles and trim env:** root `pyproject.toml` / `uv.lock` with optional groups `trim` and `trim-exb`; `scripts/with_trim_env.sh` to run tools under those groups; `evaluation/pyproject.toml` / `evaluation/uv.lock` for evaluation-only installs
 
 ### Changed
 
 - **Shared inference plumbing:** updates to `models/nemo/run_inference.py`, `models/pyannote/run_inference.py`, pyannote Dockerfile, and `build_backends.sh` for multi-backend use
+- **Model runners:** consistent English user-facing log messages in `models/pyannote`, `models/nemo`, and `models/diarizen` `run_inference.py`
 - **Prepare pipelines:** unified CLI arguments across `prepare_data_*.sh` and optional silence-trim path integrated into those scripts; user-facing shell messages switched to English
 - **Reporting:** ROG-Dialog benchmark report refreshed to include all models
 - **Docs and packaging notes:** expanded `docs/data_ccpl.md`, `evaluation/requirements.txt`, `evaluation/README.md`, root `README.md`, and `docs/reference_rttm_design.md`; `.gitignore` and small edits in `compare_rttm.py`, `gold_rttm_from_annotations.py`, and dataset processors
@@ -24,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **CCPCL:** preprocessing and `prepare_data_ccpcl.sh` / `ccpcl_data_process.py` fixes
+- **Pyannote runner:** when a remote/API pipeline rejects `hook=`, fall back to calling the pipeline without a progress hook for the remainder of the run (avoids `SDK.apply() got an unexpected keyword argument 'hook'`)
 
 ## [0.2.2] - 2026-04-16
 
