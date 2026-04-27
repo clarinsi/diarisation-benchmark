@@ -14,7 +14,6 @@ import argparse
 import sys
 import glob
 import os
-import json
 import pandas as pd
 from pathlib import Path
 from pyannote.core import Segment, Annotation, Timeline
@@ -22,23 +21,33 @@ from pyannote.metrics.diarization import DiarizationErrorRate
 from tabulate import tabulate
 import warnings
 
+from errata_merge import load_merged_errata
+
 warnings.filterwarnings("ignore", category=UserWarning, module="pyannote.metrics.utils")
 
 def load_rttm(file_path):
     annotations = {}
-    with open(file_path, 'r') as f:
+    with open(file_path, "r", encoding="utf-8", errors="replace") as f:
         for line in f:
-            parts = line.strip().split()
-            if len(parts) < 8: continue
-            
-            file_id = parts[1]
-            start = float(parts[3])
-            duration = float(parts[4])
+            line = line.strip()
+            if not line or line.startswith(";") or line.startswith("#"):
+                continue
+            parts = line.split()
+            if len(parts) < 8:
+                continue
+            if parts[0].upper() != "SPEAKER":
+                continue
+            try:
+                file_id = parts[1]
+                start = float(parts[3])
+                duration = float(parts[4])
+            except (ValueError, IndexError):
+                continue
             label = parts[7]
-            
+
             if file_id not in annotations:
                 annotations[file_id] = Annotation(uri=file_id)
-            
+
             annotations[file_id][Segment(start, start + duration)] = label
     return annotations
 
@@ -54,22 +63,29 @@ def main():
     parser = argparse.ArgumentParser(description="Calculate DER metrics.")
     parser.add_argument("--gold", required=True, help="Path to Gold Standard RTTM file")
     parser.add_argument("--system", required=True, help="Path to folder containing System RTTM files")
-    parser.add_argument("--errata", default="DATASET_ERRATA.json", help="Path to Errata JSON")
+    parser.add_argument("--errata", default="DATASET_ERRATA.json", help="Path to manual errata JSON")
+    parser.add_argument(
+        "--no-auto-errata",
+        action="store_true",
+        help="Do not load AUTO_DATASET_ERRATA.json beside the gold RTTM (default: merge with manual).",
+    )
     parser.add_argument("--collar", type=float, default=0.0, help="Collar (forgiveness) in seconds")
     parser.add_argument("--skip_overlap", action="store_true", help="Ignore overlapping speech")
     args = parser.parse_args()
 
     print("--- DIARIZATION BENCHMARK SCORING ---")
     
-    # Naloži Errato
-    errata_dict = {}
-    if os.path.exists(args.errata):
-        try:
-            with open(args.errata, 'r') as f:
-                errata_dict = json.load(f)
-            print(f"Loaded errata config from {args.errata}")
-        except Exception as e:
-            print(f"WARNING: Could not load errata file: {e}")
+    manual_errata_path = args.errata if os.path.isfile(args.errata) else None
+    errata_dict, errata_meta = load_merged_errata(
+        args.gold, manual_errata_path, merge_auto=not args.no_auto_errata
+    )
+    if manual_errata_path:
+        print(f"Loaded manual errata from {manual_errata_path}")
+    ap = errata_meta.get("auto_path")
+    if ap and os.path.isfile(ap) and not args.no_auto_errata:
+        print(f"Merged auto errata from {ap}")
+    elif not args.no_auto_errata and ap:
+        print(f"(No auto errata file at {ap})")
 
     refs = load_rttm(args.gold)
     hyps = load_system_rttms(args.system)
@@ -95,12 +111,34 @@ def main():
         ref = refs[file_id]
         hyp = hyps[file_id]
         
-        # Implementacija UEM / Errata
+        # UEM / merged errata (trim_start, trim_end); audio extent approximated by reference RTTM
+        ref_tl = ref.get_timeline()
+        ref_end = ref_tl.extent().end if not ref_tl.empty() else 0.0
+        ed = errata_dict.get(file_id, {}) if isinstance(errata_dict.get(file_id), dict) else {}
+        eval_start = 0.0
+        ts = ed.get("trim_start")
+        if ts is not None:
+            try:
+                eval_start = max(0.0, float(ts))
+            except (TypeError, ValueError):
+                eval_start = 0.0
+        eval_end = float(ref_end)
+        te = ed.get("trim_end")
+        if te is not None:
+            try:
+                eval_end = min(eval_end, float(te))
+            except (TypeError, ValueError):
+                pass
+        eval_start = max(0.0, min(eval_start, eval_end))
+
         uem = None
-        if file_id in errata_dict and 'trim_end' in errata_dict[file_id]:
-            eval_end = errata_dict[file_id]['trim_end']
-            uem = Timeline([Segment(0.0, eval_end)])
-            print(f"  -> Applied UEM to {file_id}: evaluation ends at {eval_end}s")
+        full_window = eval_start <= 0 and eval_end >= ref_end - 1e-6
+        if file_id in errata_dict and not full_window:
+            uem = Timeline([Segment(eval_start, eval_end)])
+            print(
+                f"  -> Applied UEM to {file_id}: [{eval_start:.3f}s, {eval_end:.3f}s] "
+                f"(ref extent end {ref_end:.3f}s)"
+            )
         
         stats = metric(ref, hyp, detailed=True, uem=uem)
         

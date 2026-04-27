@@ -242,7 +242,7 @@ def main():
             # Step 4: Optionally trim using audio
             if ENABLE_TRIMMING:
                 audio_path = AUDIO_DIR / f"{base_id}.wav"
-                trimmed, file_stats = trim_file_segments(segments, audio_path, TRIM_PARAMS)
+                trimmed, file_stats, _ = trim_file_segments(segments, audio_path, TRIM_PARAMS)
                 merge_stats(master_trim_stats, file_stats)
             else:
                 trimmed = [(s['start'], s['duration'], s['speaker']) for s in segments]

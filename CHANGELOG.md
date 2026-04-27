@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Report runner script:** [scripts/run_evaluation_report.sh](scripts/run_evaluation_report.sh) — from the repo root, build `benchmark-eval` (or use `uv` if Docker fails) and run `generate_report_universal.py` with per-dataset defaults (trimmed gold, output under `reports/`, ROG-Dialog errata only); `--help` for options.
+- **Evaluation guide:** [docs/evaluation.md](docs/evaluation.md) — Docker and local `uv` workflows, trimmed gold paths, errata usage (manual **ROG-Dialog only** in repo), merge rules, executive-summary aggregation semantics, CCPCL domain axis.
+- **Auto errata from capped silence trim:** `trim_gold_silences_rttm.py` / `gold_rttm_from_annotations.py` detect residual leading/trailing silence when `max_trim_s` caps edge movement; write `AUTO_DATASET_ERRATA.json` beside trimmed gold (`source`, optional `trim_start`/`trim_end`, diagnostics).
+- **`evaluation/errata_merge.py`:** load manual `--errata` + auto file from `dirname(gold)`, merge (`trim_start` = max, `trim_end` = min), markdown tables for reports.
+- **Report §0 enhancements:** `gold_rttm_provenance.py` decodes `; gold_rttm` / `; trim_params` into KV tables; errata subsection from merged metadata; errata note when headers are absent but errata exists.
+- **CLI flags:** `--no_auto_errata` / `--no-auto-errata` to skip auto errata on reports / `score.py`.
 - **Diarizen inference backend** (`models/diarizen/`): Dockerfile, README, and `run_inference.py`
 - **Benchmark outputs:** reorganized `results/`; CCPCL and ROG-Art RTTMs and `benchmark_metadata.json` (ROG-Art run folders: `pyannote_3_1`, `pyannote_community_1`, `speaker-diarization-precision-2`, `reverb-diarization-v2`, `diarizen`, `diarizen_v2`, `diar_sortformer_4spk-v1`, `diar_streaming_sortformer_4spk-v2`, `diar_streaming_sortformer_4spk-v2.1`)
 - **Data prep dispatcher:** `prepare_data.sh` lists/runs root `prepare_data_<dataset>.sh` scripts; `docs/data_preparation.md` documents workflows and uv-based trim environments
@@ -16,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **UEM / errata evaluation:** `evaluate_model_comprehensive`, `score.py`, and timelines use `[eval_start, eval_end]` from merged errata; `plot_timeline` / `find_extreme_segments` respect leading ignore; `score.py` `load_rttm` skips comment lines like the report loader.
+- **Executive summary metrics:** headline DER/JER/boundary/purity/coverage are **micro-pooled only over per-file `Status == OK`** (aligned with the **Completed** numerator); failed/missing files no longer inflate headline DER. Reports include an explicit aggregation note under the summary table.
+- **CCPCL report `Domain`:** participant age for stratification uses **whole years** (`Age 3 / F` instead of `Age 3;11 / F`); raw `years;months` preserved in `Keywords` when applicable (`recording_metadata.py`).
+- **Docs:** `evaluation/README.md` trimmed-gold examples; ROG-Art/CCPCL examples **without** ROG-Dialog-only errata mount; `docs/data_preparation.md`, `docs/reference_rttm_design.md`, `docs/data_ccpl.md` cross-link evaluation and errata/provenance; root `README.md` evaluation pointer and gold path.
+- **Docker:** `evaluation/Dockerfile` copies `errata_merge.py`.
 - **Shared inference plumbing:** updates to `models/nemo/run_inference.py`, `models/pyannote/run_inference.py`, pyannote Dockerfile, and `build_backends.sh` for multi-backend use
 - **Model runners:** consistent English user-facing log messages in `models/pyannote`, `models/nemo`, and `models/diarizen` `run_inference.py`
 - **Prepare pipelines:** unified CLI arguments across `prepare_data_*.sh` and optional silence-trim path integrated into those scripts; user-facing shell messages switched to English

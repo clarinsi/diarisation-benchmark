@@ -102,7 +102,7 @@ uv sync --group trim --group trim-exb
 
 Or run **`DIABENCH_CLEAR_PRAAT_UV_CACHE=1 ./scripts/with_trim_env.sh …`** once so the helper script deletes that cache directory before `uv sync`.
 
-### Evaluation (reports)
+### Evaluation (reports and scoring)
 
 ```bash
 cd evaluation
@@ -110,7 +110,7 @@ uv sync
 uv run python generate_report.py --help
 ```
 
-The Docker image for evaluation still installs from [`evaluation/requirements.txt`](../evaluation/requirements.txt), which is generated from this uv project (`uv export`) so Docker and local uv stay aligned.
+The Docker image for evaluation installs from [`evaluation/requirements.txt`](../evaluation/requirements.txt) (exported from that folder’s uv project). **Preferred:** run the universal report from the repo root with **[`scripts/run_evaluation_report.sh`](../scripts/run_evaluation_report.sh)** (Docker or `uv` fallback). **Manual** command-line examples, `score.py`, errata, and trimmed gold paths are in **[Evaluation and reporting](evaluation.md)**.
 
 ## Common options and defaults
 
@@ -165,5 +165,6 @@ Behaviour is identical to `./prepare_data.sh <alias> …` for a single dataset.
 
 ## Related documentation
 
+- [Evaluation and reporting](evaluation.md)
 - [Reference RTTM design](reference_rttm_design.md)
 - [CCPCL corpus appendix (methodology and sample table)](data_ccpl.md)

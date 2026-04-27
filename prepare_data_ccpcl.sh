@@ -67,6 +67,15 @@ unzip -q -o "$RAW_DIR/CCPCL.zip" -d "$RAW_DIR/CCPCL"
 
 echo "=== 3. Extraction finished: $RAW_DIR/CCPCL ==="
 
+# Session metadata (TalkBank release) for universal reports: copy next to dataset docs.
+for DEMO_CAND in "$RAW_DIR/CCPCL/CCPCL/0demo.xlsx" "$RAW_DIR/CCPCL/0demo.xlsx"; do
+    if [ -f "$DEMO_CAND" ]; then
+        cp -f "$DEMO_CAND" "$DEST_DIR/docs/0demo.xlsx"
+        echo "Copied 0demo.xlsx to $DEST_DIR/docs/ (reporting metadata)."
+        break
+    fi
+done
+
 # Original files should be placed in data/CHILDES-CCPCL/audio (if they already exist under the CCPCL structure)
 # (If desired, you can add automatic copying here for any layout.)
 # For now this is only an instruction reminder.

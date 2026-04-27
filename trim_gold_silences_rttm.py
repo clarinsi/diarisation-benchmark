@@ -57,6 +57,18 @@ DEFAULT_TRIM_PARAMS = TrimParams()
 # PER-FILE STATS
 # ──────────────────────────────────────────────────────────────
 @dataclass
+class SegmentEdgeDiagnostics:
+    """VAD-desired vs max_trim_s-capped edge positions for one annotated segment."""
+
+    ideal_start: float
+    ideal_end: float
+    applied_start: float
+    applied_end: float
+    residual_leading_s: float
+    residual_trailing_s: float
+
+
+@dataclass
 class TrimStats:
     total: int = 0
     trimmed: int = 0
@@ -166,6 +178,7 @@ def _trim_single_segment(snd, seg, params: TrimParams):
         status: "OK" | "NO_ACTIVITY" | "TOO_SHORT"
         result: (new_start, new_end) or None
         times, mask: for reuse by internal silence splitter
+        edge: SegmentEdgeDiagnostics or None when not OK
     """
     orig_start = seg['start']
     orig_end = seg['end']
@@ -175,7 +188,7 @@ def _trim_single_segment(snd, seg, params: TrimParams):
     active_in_segment = mask & in_segment
 
     if not np.any(active_in_segment):
-        return "NO_ACTIVITY", None, times, mask
+        return "NO_ACTIVITY", None, times, mask, None
 
     active_times = times[active_in_segment]
     detected_start = active_times[0]
@@ -183,21 +196,32 @@ def _trim_single_segment(snd, seg, params: TrimParams):
 
     # Guard margin
     guard_s = params.guard_ms / 1000.0
-    new_start = detected_start - guard_s
-    new_end = detected_end + guard_s
+    raw_start = detected_start - guard_s
+    raw_end = detected_end + guard_s
+    ideal_start = max(orig_start, min(raw_start, orig_end))
+    ideal_end = min(orig_end, max(raw_end, orig_start))
 
-    # Enforce max trim + clamp to original boundaries
-    new_start = max(new_start, orig_start)
-    new_end = min(new_end, orig_end)
+    # Enforce max trim + clamp to original boundaries (same semantics as before)
+    new_start = ideal_start
+    new_end = ideal_end
     new_start = min(new_start, orig_start + params.max_trim_s)
     new_end = max(new_end, orig_end - params.max_trim_s)
     new_start = max(new_start, orig_start)
     new_end = min(new_end, orig_end)
 
-    if (new_end - new_start) < params.min_duration:
-        return "TOO_SHORT", None, times, mask
+    edge = SegmentEdgeDiagnostics(
+        ideal_start=ideal_start,
+        ideal_end=ideal_end,
+        applied_start=new_start,
+        applied_end=new_end,
+        residual_leading_s=max(0.0, ideal_start - new_start),
+        residual_trailing_s=max(0.0, new_end - ideal_end),
+    )
 
-    return "OK", (new_start, new_end), times, mask
+    if (new_end - new_start) < params.min_duration:
+        return "TOO_SHORT", None, times, mask, edge
+
+    return "OK", (new_start, new_end), times, mask, edge
 
 
 def _split_internal_silences(new_start, new_end, times, mask, params: TrimParams):
@@ -266,12 +290,17 @@ def trim_file_segments(segments, audio_path, params: TrimParams = None):
     Returns:
         trimmed: list of (start, duration, speaker) tuples
         stats: TrimStats for this file
+        file_edge_caps: dict with optional UEM hints when max_trim_s caps leave
+            residual false speech at file edges (see SegmentEdgeDiagnostics).
     """
     if params is None:
         params = DEFAULT_TRIM_PARAMS
 
     stats = TrimStats()
     audio_path = Path(audio_path)
+
+    if not segments:
+        return [], stats, {}
 
     # If audio is missing, return segments unchanged
     if not audio_path.exists():
@@ -281,7 +310,7 @@ def trim_file_segments(segments, audio_path, params: TrimParams = None):
             stats.total += 1
             stats.unchanged += 1
             stats.output_segments += 1
-        return [(s['start'], s['duration'], s['speaker']) for s in segments], stats
+        return [(s['start'], s['duration'], s['speaker']) for s in segments], stats, {}
 
     snd = parselmouth.Sound(str(audio_path))
 
@@ -294,12 +323,20 @@ def trim_file_segments(segments, audio_path, params: TrimParams = None):
               f"sr={int(snd.sampling_frequency)} | "
               f"file={file_size_mb:.2f}MB | expected={expected_size_mb:.2f}MB"
               f"{' [TRUNCATED?]' if file_size_mb < expected_size_mb - 0.1 else ''}")
-        
-    trimmed = []
 
-    for seg in segments:
+    trimmed = []
+    eps = 1e-3
+    sorted_segs = sorted(segments, key=lambda s: float(s["start"]))
+    first_key = 0
+    last_key = len(sorted_segs) - 1
+    trim_start_suggest: float | None = None
+    trim_end_suggest: float | None = None
+    sum_res_lead = 0.0
+    sum_res_trail = 0.0
+
+    for si, seg in enumerate(sorted_segs):
         stats.total += 1
-        status, result, times, mask = _trim_single_segment(snd, seg, params)
+        status, result, times, mask, edge = _trim_single_segment(snd, seg, params)
 
         # No voice activity detected — keep original
         if status == "NO_ACTIVITY":
@@ -320,6 +357,14 @@ def trim_file_segments(segments, audio_path, params: TrimParams = None):
             continue
 
         new_start, new_end = result
+        if edge is not None:
+            sum_res_lead += edge.residual_leading_s
+            sum_res_trail += edge.residual_trailing_s
+            if si == first_key and edge.residual_leading_s > eps:
+                trim_start_suggest = edge.ideal_start
+            if si == last_key and edge.residual_trailing_s > eps:
+                trim_end_suggest = edge.ideal_end
+
         trim_left = new_start - seg['start']
         trim_right = seg['end'] - new_end
 
@@ -361,7 +406,18 @@ def trim_file_segments(segments, audio_path, params: TrimParams = None):
             trimmed.append((new_start, new_end - new_start, seg['speaker']))
             stats.output_segments += 1
 
-    return trimmed, stats
+    file_edge_caps: dict = {
+        "max_trim_s": float(params.max_trim_s),
+        "audio_duration_s": float(audio_dur),
+        "residual_leading_s": float(sum_res_lead),
+        "residual_trailing_s": float(sum_res_trail),
+    }
+    if trim_start_suggest is not None:
+        file_edge_caps["trim_start"] = float(trim_start_suggest)
+    if trim_end_suggest is not None:
+        file_edge_caps["trim_end"] = float(trim_end_suggest)
+
+    return trimmed, stats, file_edge_caps
 
 
 # ──────────────────────────────────────────────────────────────
@@ -577,7 +633,7 @@ def main():
             audio_path = audio_dir / f"{file_id}.wav"
             print(f"Processing {file_id} ({len(segments_by_file[file_id])} segments)...")
 
-            trimmed, file_stats = trim_file_segments(
+            trimmed, file_stats, _ = trim_file_segments(
                 segments_by_file[file_id], audio_path, params)
 
             # Write immediately — no data lost on crash

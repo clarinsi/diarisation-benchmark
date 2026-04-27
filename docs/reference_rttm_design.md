@@ -69,9 +69,22 @@ python3 ccpcl_data_process.py \
 
 With trimming enabled inside the gold generators, add `--enable_trimming` where supported; a companion `*_trimmed.rttm` is written next to the primary output (see `trimmed_rttm_path` in `gold_rttm_from_annotations.py`).
 
-Operator-oriented steps: [Data preparation](data_preparation.md).
+**Benchmarking:** Prefer the **trimmed** RTTM for evaluation when both exist, so hypotheses are scored against gold boundaries that better match acoustic speech (see [Evaluation and reporting](evaluation.md)).
 
-## 6. Standalone CLI: `trim_gold_silences_rttm.py`
+Operator-oriented steps: [Data preparation](data_preparation.md). To generate evaluation reports: [Evaluation and reporting](evaluation.md) and [`scripts/run_evaluation_report.sh`](../scripts/run_evaluation_report.sh).
+
+## 6. Provenance headers and auto errata
+
+Gold RTTMs produced by `gold_rttm_from_annotations.py` may start with up to two comment lines before `SPEAKER` rows:
+
+1. **`; gold_rttm …`** — pipeline, source (`trs` / `cha`), merge/min-duration settings, output basename, and directory paths (`format_gold_rttm_header`).
+2. **`; trim_params …`** — silence edge-trim parameters when trimming was applied (`format_trim_provenance_line`).
+
+Reports decode these into human-readable tables in **§0 Gold RTTM**.
+
+When edge trimming uses a per-edge cap (`max_trim_s`), some leading or trailing silence can remain misaligned between gold and audio. In that case the preparation pipeline may write **`AUTO_DATASET_ERRATA.json`** in the **same directory as the trimmed gold**, with optional `trim_start` / `trim_end` and diagnostics (`residual_leading_s`, `residual_trailing_s`, etc.). Evaluation tools merge this file with optional **manual** errata; see [Evaluation and reporting](evaluation.md).
+
+## 7. Standalone CLI: `trim_gold_silences_rttm.py`
 
 [`trim_gold_silences_rttm.py`](../trim_gold_silences_rttm.py) trims existing gold RTTM segment boundaries using WAV evidence (Praat / Parselmouth pipeline). Defaults below match `parse_args()` in that file (run `python3 trim_gold_silences_rttm.py --help` for the live list).
 
@@ -94,7 +107,7 @@ Operator-oriented steps: [Data preparation](data_preparation.md).
 | `--test-run` | off | Process only the first file id in the RTTM |
 | `--verbose` | off | Verbose per-segment logging |
 
-The tool also writes metadata beside the output: `<output_basename>_metadata.txt` (same directory, stem derived from `--output`).
+The tool also writes metadata beside the output: `<output_basename>_metadata.txt` (same directory, stem derived from `--output`). Standalone trimming does not emit `AUTO_DATASET_ERRATA.json` by itself; that file is produced when trimming is integrated in **`gold_rttm_from_annotations.py`** with residual-edge detection.
 
 **Example (CCPCL):**
 

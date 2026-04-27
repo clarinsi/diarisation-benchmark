@@ -28,6 +28,9 @@ from pyannote.metrics.segmentation import SegmentationPrecision, SegmentationRec
 from tabulate import tabulate
 import warnings
 
+from errata_merge import load_merged_errata
+from gold_rttm_provenance import format_gold_rttm_report_section
+
 # Utišamo opozorila
 warnings.filterwarnings("ignore")
 
@@ -57,16 +60,22 @@ def normalize_speaker_label(label):
 def load_rttm(file_path):
     annotations = {}
     if not os.path.exists(file_path): return {}
-    with open(file_path, 'r') as f:
+    with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
         for line in f:
-            parts = line.strip().split()
-            if len(parts) < 8: continue
-            
-            file_id = parts[1]
-            start = float(parts[3])
-            duration = float(parts[4])
+            line = line.strip()
+            if not line or line.startswith(';') or line.startswith('#'):
+                continue
+            parts = line.split()
+            if len(parts) < 8 or parts[0].upper() != 'SPEAKER':
+                continue
+            try:
+                file_id = parts[1]
+                start = float(parts[3])
+                duration = float(parts[4])
+            except (ValueError, IndexError):
+                continue
             label = normalize_speaker_label(parts[7])
-            
+
             if file_id not in annotations:
                 annotations[file_id] = Annotation(uri=file_id)
             annotations[file_id][Segment(start, start + duration)] = label
@@ -140,6 +149,13 @@ def evaluate_model_comprehensive(model_dir, gold_annotations, collar, hw_file_st
         'jer_num': 0, 'jer_den': 0,
         'bp_num': 0, 'br_num': 0, 'b_den': 0,
     }
+    acc_ok = {
+        'total': 0, 'error': 0,
+        'p_num': 0, 'p_den': 0,
+        'c_num': 0, 'c_den': 0,
+        'jer_num': 0, 'jer_den': 0,
+        'bp_num': 0, 'br_num': 0, 'b_den': 0,
+    }
     
     for fid, ref in gold_annotations.items():
         hw = hw_file_stats.get(fid, {})
@@ -151,12 +167,24 @@ def evaluate_model_comprehensive(model_dir, gold_annotations, collar, hw_file_st
         ref_tl = ref.get_timeline()
         ref_end = ref_tl.extent().end if not ref_tl.empty() else 0.0
         audio_dur = hw.get('duration') or ref_end
-        
-        eval_end = audio_dur
-        if fid in errata_dict and 'trim_end' in errata_dict[fid]:
-            eval_end = errata_dict[fid]['trim_end']
-            
-        uem = Timeline([Segment(0.0, eval_end)])
+
+        ed = errata_dict.get(fid, {}) if isinstance(errata_dict.get(fid), dict) else {}
+        eval_start = 0.0
+        ts = ed.get("trim_start")
+        if ts is not None:
+            try:
+                eval_start = max(0.0, float(ts))
+            except (TypeError, ValueError):
+                eval_start = 0.0
+        eval_end = float(audio_dur)
+        te = ed.get("trim_end")
+        if te is not None:
+            try:
+                eval_end = min(eval_end, float(te))
+            except (TypeError, ValueError):
+                pass
+        eval_start = max(0.0, min(eval_start, eval_end))
+        uem = Timeline([Segment(eval_start, eval_end)])
 
         has_output = fid in system_annotations and len(system_annotations[fid]) > 0
         if hw.get('error'): has_output = False
@@ -185,6 +213,14 @@ def evaluate_model_comprehensive(model_dir, gold_annotations, collar, hw_file_st
             acc['bp_num'] += b_p * total
             acc['br_num'] += b_r * total
             acc['b_den'] += total
+
+            acc_ok['total'] += total
+            acc_ok['error'] += (miss + fa + conf)
+            acc_ok['jer_num'] += jer * total
+            acc_ok['jer_den'] += total
+            acc_ok['bp_num'] += b_p * total
+            acc_ok['br_num'] += b_r * total
+            acc_ok['b_den'] += total
             
             hyp_eval = hyp.crop(uem)
             ref_eval = ref.crop(uem)
@@ -194,6 +230,9 @@ def evaluate_model_comprehensive(model_dir, gold_annotations, collar, hw_file_st
             
             acc['p_num'] += purity * hyp_dur; acc['p_den'] += hyp_dur
             acc['c_num'] += coverage * ref_dur; acc['c_den'] += ref_dur
+
+            acc_ok['p_num'] += purity * hyp_dur; acc_ok['p_den'] += hyp_dur
+            acc_ok['c_num'] += coverage * ref_dur; acc_ok['c_den'] += ref_dur
 
             res_entry.update({
                 'DER': (stats.get('diarization error rate', 0.0)) * 100 if total > 0 else 0.0,
@@ -227,13 +266,17 @@ def evaluate_model_comprehensive(model_dir, gold_annotations, collar, hw_file_st
 
         file_results.append(res_entry)
 
-    g_der = (acc['error'] / acc['total'] * 100) if acc['total'] > 0 else 0.0
-    g_pur = (acc['p_num'] / acc['p_den'] * 100) if acc['p_den'] > 0 else 0.0
-    g_cov = (acc['c_num'] / acc['c_den'] * 100) if acc['c_den'] > 0 else 0.0
-    g_jer = (acc['jer_num'] / acc['jer_den'] * 100) if acc['jer_den'] > 0 else 0.0
-    g_bp = (acc['bp_num'] / acc['b_den'] * 100) if acc['b_den'] > 0 else 0.0
-    g_br = (acc['br_num'] / acc['b_den'] * 100) if acc['b_den'] > 0 else 0.0
-    g_bf1 = (2 * g_bp * g_br / (g_bp + g_br)) if (g_bp + g_br) > 0 else 0.0
+    g_der = (acc_ok['error'] / acc_ok['total'] * 100) if acc_ok['total'] > 0 else float("nan")
+    g_pur = (acc_ok['p_num'] / acc_ok['p_den'] * 100) if acc_ok['p_den'] > 0 else float("nan")
+    g_cov = (acc_ok['c_num'] / acc_ok['c_den'] * 100) if acc_ok['c_den'] > 0 else float("nan")
+    g_jer = (acc_ok['jer_num'] / acc_ok['jer_den'] * 100) if acc_ok['jer_den'] > 0 else float("nan")
+    g_bp = (acc_ok['bp_num'] / acc_ok['b_den'] * 100) if acc_ok['b_den'] > 0 else float("nan")
+    g_br = (acc_ok['br_num'] / acc_ok['b_den'] * 100) if acc_ok['b_den'] > 0 else float("nan")
+    g_bf1 = (
+        (2 * g_bp * g_br / (g_bp + g_br))
+        if (g_bp + g_br) > 0
+        else float("nan")
+    )
     
     return {
         'der': g_der,
@@ -246,16 +289,25 @@ def evaluate_model_comprehensive(model_dir, gold_annotations, collar, hw_file_st
         'files': file_results
     }
 
-def find_extreme_segments(ref, systems_dict, window_duration=60.0, step=30.0, min_speech=15.0, eval_boundary=None):
+def find_extreme_segments(
+    ref,
+    systems_dict,
+    window_duration=60.0,
+    step=30.0,
+    min_speech=15.0,
+    eval_boundary=None,
+    eval_start=0.0,
+):
     """
     Skenira posnetek z drsečim oknom in poišče 60s izsek z najboljšim in najslabšim povprečnim DER.
     """
+    t0 = float(eval_start or 0.0)
     max_time = ref.get_timeline().extent().end if not ref.get_timeline().empty() else 0.0
     if eval_boundary and eval_boundary < max_time:
         max_time = eval_boundary
-        
+
     max_start = max_time - window_duration
-    if max_start <= 0:
+    if max_start <= t0:
         return None, None
         
     best_seg = None
@@ -267,7 +319,7 @@ def find_extreme_segments(ref, systems_dict, window_duration=60.0, step=30.0, mi
     val_sys = [hyp for hyp in systems_dict.values() if hyp and not hyp.get_timeline().empty()]
     if not val_sys: return None, None
     
-    for start in np.arange(0, max_start + 1, step):
+    for start in np.arange(t0, max_start + 1, step):
         seg = Segment(start, start + window_duration)
         uem = Timeline([seg])
         
@@ -300,7 +352,17 @@ def find_extreme_segments(ref, systems_dict, window_duration=60.0, step=30.0, mi
             
     return best_seg, worst_seg
 
-def plot_timeline(gold_annot, system_annots_dict, file_id, output_dir, eval_boundary=None, crop_segment=None, title_prefix="Timeline Analysis", suffix=""):
+def plot_timeline(
+    gold_annot,
+    system_annots_dict,
+    file_id,
+    output_dir,
+    eval_boundary=None,
+    eval_start=None,
+    crop_segment=None,
+    title_prefix="Timeline Analysis",
+    suffix="",
+):
     """
     Risanje gantograma. Zna izrisati celoto ali 'zoomiran' izsek (crop_segment).
     Barve ostanejo dosledne ne glede na crop, ker se izračunajo na celotni datoteki.
@@ -310,7 +372,11 @@ def plot_timeline(gold_annot, system_annots_dict, file_id, output_dir, eval_boun
     
     # 1. OPTIMAL MAPPING NA CELOTNI DATOTEKI (Za dosledne barve)
     metric = DiarizationErrorRate(skip_overlap=SKIP_OVERLAP)
-    uem_full = Timeline([Segment(0.0, eval_boundary)]) if eval_boundary else None
+    ref_end_full = gold_annot.get_timeline().extent().end if not gold_annot.get_timeline().empty() else 0.0
+    es = float(eval_start) if eval_start is not None else 0.0
+    eb = float(eval_boundary) if eval_boundary is not None else ref_end_full
+    eb = max(es, eb)
+    uem_full = Timeline([Segment(es, eb)]) if (eval_boundary is not None or eval_start is not None) else None
     
     mapped_systems = {}
     all_speakers = set(gold_annot.labels())
@@ -368,6 +434,13 @@ def plot_timeline(gold_annot, system_annots_dict, file_id, output_dir, eval_boun
         y_ticks.append(y_pos + 0.3); y_tick_labels.append(model_name)
         y_pos -= 1.0
         
+    # Ignored leading / trailing regions (UEM outside [eval_start, eval_boundary])
+    if es > 0 and not crop_segment:
+        if min_x <= es <= max_x:
+            plt.axvline(x=es, color='red', linestyle='--', linewidth=2)
+            plt.axvspan(min_x, es, color='gray', alpha=0.2)
+            plt.text(es - (max_x - min_x) * 0.02, 0.5, "IGNORED", color='red', weight='bold', rotation=90, ha='right')
+
     # Narišemo mejo evalvacije, če je vidna v trenutnem oknu
     if eval_boundary and min_x <= eval_boundary <= max_x and not crop_segment:
         plt.axvline(x=eval_boundary, color='red', linestyle='--', linewidth=2, label='Eval Boundary')
@@ -393,8 +466,10 @@ def plot_timeline(gold_annot, system_annots_dict, file_id, output_dir, eval_boun
         visible_speakers.update(hyp.labels())
         
     patches = [mpatches.Patch(color=spk_color_map[s], label=s) for s in sorted(list(visible_speakers))[:20]]
-    if eval_boundary and min_x <= eval_boundary <= max_x and not crop_segment:
-        patches.append(mpatches.Patch(color='gray', alpha=0.2, label='Ignored Region'))
+    if (es > 0 and min_x <= es <= max_x and not crop_segment) or (
+        eval_boundary and min_x <= eval_boundary <= max_x and not crop_segment
+    ):
+        patches.append(mpatches.Patch(color='gray', alpha=0.2, label='Ignored region (UEM)'))
         
     plt.legend(handles=patches, bbox_to_anchor=(1.01, 1), loc='upper left')
     plt.tight_layout(rect=[0, 0, 0.9, 1])
@@ -490,6 +565,11 @@ def main():
     parser.add_argument("--results_dir", required=True)
     parser.add_argument("--metadata", help="Path to TSV")
     parser.add_argument("--errata", default="DATASET_ERRATA.json")
+    parser.add_argument(
+        "--no_auto_errata",
+        action="store_true",
+        help="Do not load AUTO_DATASET_ERRATA.json beside the gold RTTM (default: merge auto + manual).",
+    )
     parser.add_argument("--output", required=True)
     parser.add_argument("--boundary_tolerance", type=float, default=0.250, help="Boundary tolerance (seconds) for segmentation precision/recall (default: 0.250)")
     parser.add_argument(
@@ -505,12 +585,11 @@ def main():
     os.makedirs(args.output, exist_ok=True)
     gold_annots = load_rttm(args.gold)
     meta_dict = load_metadata(args.metadata) if args.metadata else {}
-    
-    errata_dict = {}
-    if os.path.exists(args.errata):
-        try:
-            with open(args.errata, 'r') as f: errata_dict = json.load(f)
-        except: pass
+
+    manual_errata_path = args.errata if os.path.isfile(args.errata) else None
+    errata_dict, errata_meta = load_merged_errata(
+        args.gold, manual_errata_path, merge_auto=not args.no_auto_errata
+    )
 
     model_dirs = [f.path for f in os.scandir(args.results_dir) if f.is_dir()]
 
@@ -645,7 +724,8 @@ def main():
 
     with open(os.path.join(args.output, "ROG_Dia_Benchmark_Report.md"), "w") as f:
         f.write(f"# ROG-Dia Benchmark Report\n\n**Date:** {pd.Timestamp.now().date()}\n\n")
-        
+        f.write(format_gold_rttm_report_section(args.gold, errata_meta))
+
         f.write("## 1. Evaluated Models\n")
         for disp_name, full_name in sorted(model_links.items()):
             f.write(f"* **{disp_name}** (`{full_name}`) - [HuggingFace](https://huggingface.co/{full_name})\n")
@@ -665,7 +745,13 @@ def main():
         )
         
         f.write(tabulate(df_lead, headers="keys", tablefmt="github", showindex=False))
-        f.write("\n\n### Terminology & Methodology\n")
+        f.write(
+            "\n\n> **Note on aggregation:** Headline DER/JER/Boundary/Purity/Coverage are pooled "
+            "only over recordings with per-file `Status == OK` (the numerator in the `Completed` column). "
+            "Miss/FA/Conf are also averaged over the same completed recordings. Recordings with missing/failed "
+            "outputs are shown in the deep dive tables but are not included in these headline aggregates.\n\n"
+        )
+        f.write("### Terminology & Methodology\n")
         f.write("* **DER (Diarization Error Rate):** Primary metric. Lower is better. Sum of Missed, False Alarm, and Confusion rates.\n")
         f.write("* **JER (Jaccard Error Rate):** Speaker-balanced diarization error. Lower is better.\n")
         f.write("* **Miss (%):** Speech present in Gold Standard but missed by the model.\n")
@@ -679,9 +765,20 @@ def main():
 
         if errata_dict:
             f.write("## 3. Dataset Errata (Corrections Applied)\n")
-            f.write("Corrections automatically applied via Universal Evaluation Maps (UEM) to account for transcription errors. Models are not penalized for predictions outside these boundaries.\n\n")
+            f.write(
+                "Corrections applied via Universal Evaluation Maps (UEM). See **§0** for full "
+                "manual vs auto errata tables and merged bounds.\n\n"
+            )
             for fid, err in errata_dict.items():
-                f.write(f"* **`{fid}`**: Evaluated only up to {err.get('trim_end', 'EOF')}s. *Reason: {err.get('reason', 'N/A')}*\n")
+                ts = err.get("trim_start")
+                te = err.get("trim_end")
+                win = []
+                if ts is not None:
+                    win.append(f"from **{ts}**s")
+                if te is not None:
+                    win.append(f"to **{te}**s")
+                w = " ".join(win) if win else "(no window change)"
+                f.write(f"* **`{fid}`**: {w}. *{err.get('reason', 'N/A')}*\n")
             f.write("\n")
 
         f.write("## 4. Visual & Domain Analysis\n")
@@ -754,7 +851,15 @@ def main():
             if meta.get('Title'): f.write(f"> *{meta.get('Title')}*\n\n")
             
             if fid in errata_dict:
-                f.write(f"> ⚠️ **ERRATA APPLIED**: Evaluation bounded to {errata_dict[fid].get('trim_end')}s.\n\n")
+                edn = errata_dict[fid]
+                ts = edn.get("trim_start")
+                te = edn.get("trim_end")
+                bits = []
+                if ts is not None:
+                    bits.append(f"start **{ts}**s")
+                if te is not None:
+                    bits.append(f"end **{te}**s")
+                f.write(f"> **ERRATA (UEM):** " + ", ".join(bits) + "\n\n")
 
             # --- Full Timeline ---
             file_annots = {}
@@ -763,26 +868,64 @@ def main():
                 disp_n = short.replace('_', ' ').replace('-', ' ')
                 rttm = os.path.join(m_dir, f"{fid}.rttm")
                 if os.path.exists(rttm): file_annots[disp_n] = load_rttm(rttm).get(fid, Annotation())
-            
-            eval_bound = errata_dict.get(fid, {}).get('trim_end', None) if fid in errata_dict else None
-            
+
+            edn = errata_dict.get(fid, {}) if fid in errata_dict else {}
+            eval_bound = edn.get("trim_end", None)
+            eval_start = edn.get("trim_start", None)
+
             if fid in gold_annots:
-                plot_timeline(gold_annots[fid], file_annots, fid, args.output, eval_boundary=eval_bound, suffix="_full")
+                plot_timeline(
+                    gold_annots[fid],
+                    file_annots,
+                    fid,
+                    args.output,
+                    eval_boundary=eval_bound,
+                    eval_start=eval_start,
+                    suffix="_full",
+                )
                 f.write(f"![Full Timeline {fid}](timeline_{fid}_full.png)\n\n")
-                
+
                 # --- 60-Second Zoom Snippets ---
-                best_seg, worst_seg = find_extreme_segments(gold_annots[fid], file_annots, window_duration=60.0, step=30.0, min_speech=15.0, eval_boundary=eval_bound)
-                
+                best_seg, worst_seg = find_extreme_segments(
+                    gold_annots[fid],
+                    file_annots,
+                    window_duration=60.0,
+                    step=30.0,
+                    min_speech=15.0,
+                    eval_boundary=eval_bound,
+                    eval_start=float(eval_start) if eval_start is not None else 0.0,
+                )
+
                 if best_seg and worst_seg:
                     f.write("#### 60-Second Snippets (Zoom-in)\n")
                     f.write("Below are 60-second zoomed-in windows showing where the models performed best and worst (based on average DER).\n\n")
-                    
+
                     # Risanje Best Snippet
-                    plot_timeline(gold_annots[fid], file_annots, fid, args.output, eval_boundary=eval_bound, crop_segment=best_seg, title_prefix="BEST Segment (Lowest Avg DER)", suffix="_best")
+                    plot_timeline(
+                        gold_annots[fid],
+                        file_annots,
+                        fid,
+                        args.output,
+                        eval_boundary=eval_bound,
+                        eval_start=eval_start,
+                        crop_segment=best_seg,
+                        title_prefix="BEST Segment (Lowest Avg DER)",
+                        suffix="_best",
+                    )
                     f.write(f"![Best Segment {fid}](timeline_{fid}_best.png)\n\n")
-                    
+
                     # Risanje Worst Snippet
-                    plot_timeline(gold_annots[fid], file_annots, fid, args.output, eval_boundary=eval_bound, crop_segment=worst_seg, title_prefix="WORST Segment (Highest Avg DER)", suffix="_worst")
+                    plot_timeline(
+                        gold_annots[fid],
+                        file_annots,
+                        fid,
+                        args.output,
+                        eval_boundary=eval_bound,
+                        eval_start=eval_start,
+                        crop_segment=worst_seg,
+                        title_prefix="WORST Segment (Highest Avg DER)",
+                        suffix="_worst",
+                    )
                     f.write(f"![Worst Segment {fid}](timeline_{fid}_worst.png)\n\n")
 
             # --- Tabela Metrik ---

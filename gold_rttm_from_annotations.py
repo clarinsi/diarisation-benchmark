@@ -5,6 +5,7 @@ Optional audio-informed silence trimming via trim_gold_silences_rttm (lazy impor
 
 from __future__ import annotations
 
+import json
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import asdict
@@ -64,6 +65,47 @@ def format_trim_provenance_line(trim_params: Any) -> str:
     """Second RTTM comment line documenting silence-trim parameters."""
     items = [f"{k}={v}" for k, v in asdict(trim_params).items()]
     return "; trim_params " + " ".join(items) + "\n"
+
+
+AUTO_ERRATA_FILENAME = "AUTO_DATASET_ERRATA.json"
+
+
+def _auto_errata_record_from_edge_caps(edge_caps: dict[str, Any]) -> dict[str, Any] | None:
+    """One file_id entry for AUTO_DATASET_ERRATA.json, or None if no UEM adjustment needed."""
+    if edge_caps.get("trim_start") is None and edge_caps.get("trim_end") is None:
+        return None
+    rec: dict[str, Any] = {
+        "source": "auto",
+        "reason": (
+            "auto: VAD-informed speech boundary exceeds what max_trim_s can move on the gold "
+            "RTTM edge; residual margin still contains misleading speech labels. UEM excludes "
+            "these edges during evaluation."
+        ),
+    }
+    if edge_caps.get("trim_start") is not None:
+        rec["trim_start"] = float(edge_caps["trim_start"])
+    if edge_caps.get("trim_end") is not None:
+        rec["trim_end"] = float(edge_caps["trim_end"])
+    for k in ("max_trim_s", "audio_duration_s", "residual_leading_s", "residual_trailing_s"):
+        if k in edge_caps:
+            rec[k] = float(edge_caps[k])
+    return rec
+
+
+def write_auto_dataset_errata_json(trimmed_rttm_path: Path, edge_caps_by_file: dict[str, dict[str, Any]]) -> None:
+    """Write or remove AUTO_DATASET_ERRATA.json beside the trimmed gold RTTM."""
+    out_path = trimmed_rttm_path.parent / AUTO_ERRATA_FILENAME
+    payload: dict[str, Any] = {}
+    for fid, caps in edge_caps_by_file.items():
+        rec = _auto_errata_record_from_edge_caps(caps)
+        if rec is not None:
+            payload[fid] = rec
+    if not payload:
+        if out_path.is_file():
+            out_path.unlink()
+        return
+    out_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(f"Wrote auto errata ({len(payload)} file(s)): {out_path}")
 
 
 def trimmed_rttm_path(output_path: Path) -> Path:
@@ -353,16 +395,20 @@ def generate_gold_rttm_from_trs(
 
         master_stats = TrimStats()
         files_trimmed = 0
+        edge_caps_by_file: dict[str, dict[str, Any]] = {}
         with trimmed_path.open("w", encoding="utf-8") as t_out:
             t_out.write(header_trim)
             t_out.write(trim_line)
             for base_id in sorted(segments_by_file.keys()):
                 segs = segments_by_file[base_id]
                 wav = audio_path / f"{base_id}.wav"
-                trimmed, fstats = trim_file_segments(segs, wav, trim_params)
+                trimmed, fstats, f_caps = trim_file_segments(segs, wav, trim_params)
                 merge_stats(master_stats, fstats)
+                edge_caps_by_file[base_id] = f_caps
                 write_rttm_lines(t_out, base_id, trimmed)
                 files_trimmed += 1
+
+        write_auto_dataset_errata_json(trimmed_path, edge_caps_by_file)
 
         trimmed_speech_sec = 0.0
         with trimmed_path.open("r", encoding="utf-8") as rf:
@@ -548,16 +594,20 @@ def generate_gold_rttm_from_cha(
 
         master_stats = TrimStats()
         files_trimmed = 0
+        edge_caps_by_file: dict[str, dict[str, Any]] = {}
         with trimmed_path.open("w", encoding="utf-8") as t_out:
             t_out.write(header_trim)
             t_out.write(trim_line)
             for base_id in sorted(segments_by_file.keys()):
                 segs = segments_by_file[base_id]
                 wav = audio_dir / f"{base_id}.wav"
-                trimmed, fstats = trim_file_segments(segs, wav, trim_params)
+                trimmed, fstats, f_caps = trim_file_segments(segs, wav, trim_params)
                 merge_stats(master_stats, fstats)
+                edge_caps_by_file[base_id] = f_caps
                 write_rttm_lines(t_out, base_id, trimmed)
                 files_trimmed += 1
+
+        write_auto_dataset_errata_json(trimmed_path, edge_caps_by_file)
 
         trimmed_speech_sec = 0.0
         with trimmed_path.open("r", encoding="utf-8") as rf:

@@ -1,43 +1,60 @@
-# **Diarization Evaluation & Reporting Module**
+# Diarization evaluation and reporting
 
-This module calculates diarization/segmentation metrics and generates comprehensive benchmark reports. It natively supports **UEM (Universal Evaluation Maps)** via a JSON errata file to account for dataset transcription errors.
+This module computes diarization and segmentation metrics (DER, JER, boundary P/R/F1, purity, coverage) and writes Markdown reports with plots. It supports **UEM** via merged **manual** and **auto** errata JSON next to the gold RTTM.
 
-## **1\. Structure**
+**Preferred way to run the universal report:** from the repository root, [`../scripts/run_evaluation_report.sh`](../scripts/run_evaluation_report.sh) (builds the Docker image or uses `uv`, then runs `generate_report_universal.py` with trimmed-gold defaults).
 
-* DATASET\_ERRATA.json: Configuration file defining regions of audio that should be ignored during evaluation (e.g., if the Gold Standard stops transcribing before the audio ends).  
-* generate\_report.py: Generates the full Markdown report with visualizations.  
-* score.py: Quick CLI tool to get the score for a single model.
+**Full operator guide (Docker, datasets, errata, aggregates):** [../docs/evaluation.md](../docs/evaluation.md)
 
-## **2\. Local Python (uv)**
+## Structure
 
-Install [uv](https://docs.astral.sh/uv/) if you do not already have it (see [Installing uv](../docs/data_preparation.md#installing-uv) in the data preparation guide). From this directory:
+| Artifact / script | Purpose |
+| --- | --- |
+| `DATASET_ERRATA.json` | **Manual** UEM corrections; entries in the repo file are **ROG-Dialog** ids only. Use `--errata` for ROG-Dialog; omit for ROG-Art/CCPCL unless you maintain a separate file. |
+| `AUTO_DATASET_ERRATA.json` | **Auto** errata written beside **trimmed** gold when silence trim is capped; auto-loaded from `dirname(gold)`. |
+| `errata_merge.py` | Merge manual + auto; markdown tables for the report. |
+| `generate_report.py` | ROG-Dialog-oriented report (default Docker `ENTRYPOINT`). |
+| `generate_report_universal.py` | Same metrics for `rog_dialog`, `rog_art`, `childes_ccpcl`. |
+| `gold_rttm_provenance.py` | §0 Gold RTTM: header comments, decoded KV tables, errata subsection. |
+| `recording_metadata.py` | ROG TSV + CCPCL `0demo.xlsx` → `Domain` / fields (CCPCL `Domain` uses **whole-year** age for stratification). |
+| `score.py` | Quick per-run DER breakdown (CLI). |
+
+## Local Python (uv)
+
+Install [uv](https://docs.astral.sh/uv/) if needed (see [Installing uv](../docs/data_preparation.md#installing-uv)). From this directory:
 
 ```bash
 cd evaluation
 uv sync
 uv run python generate_report.py --help
+uv run python generate_report_universal.py --help
 uv run python score.py --help
 ```
 
-To remove the local environment when you are done: `rm -rf .venv`.
+Remove the venv when finished: `rm -rf .venv`.
 
-The **`requirements.txt`** in this folder is generated from **`pyproject.toml`** / **`uv.lock`** (`uv export`) so the [Docker image](#3-building-the-docker-image) stays in sync with the uv project.
+`requirements.txt` is exported from `pyproject.toml` / `uv.lock` for the Docker image.
 
-## **3\. Building the Docker Image**
+## Docker image
 
-```
-
+```bash
 cd evaluation
 docker build -t benchmark-eval .
-
 ```
 
-## **4\. Generating the Full Report**
+## Reporting: prefer trimmed gold
 
-The report generator scans every **subdirectory** of `--results_dir` (when you mount `results/ROG-Dialog`, that is one folder per model run, each containing `benchmark_metadata.json` and RTTMs).
+For benchmark-style evaluation, prefer **trimmed** gold RTTMs when available (see [Reference RTTM design](../docs/reference_rttm_design.md)):
 
-```
-# Evaluate with gold_standard_trimmed_15
+- ROG-Dialog: `data/ROG-Dialog/ref_rttm/gold_standard_trimmed_15.rttm`
+- ROG-Art: `data/ROG-Art/ref_rttm/default_gold_standard_trimmed.rttm`
+- CCPCL: `data/CHILDES-CCPCL/ref_rttm/ccpcl_gold_standard_trimmed.rttm`
+
+Run `docker` from the **repository root** so `$(pwd)/data` and `$(pwd)/results` resolve correctly.
+
+### ROG-Dialog (`generate_report.py`, with manual errata)
+
+```bash
 docker run --rm \
   -v "$(pwd)/data/ROG-Dialog:/data/rog" \
   -v "$(pwd)/results/ROG-Dialog:/data/results" \
@@ -48,64 +65,96 @@ docker run --rm \
   --gold /data/rog/ref_rttm/gold_standard_trimmed_15.rttm \
   --results_dir /data/results \
   --metadata /data/rog/docs/ROG-Dia-meta-speeches.tsv \
+  --errata /app/DATASET_ERRATA.json \
   --boundary_tolerance 0.250 \
   --analysis_collar 0.25 \
-  --output /data/reports/ROG-Dia_GoldTrimmed_Report
-
+  --output /data/reports/ROG_Dia_GoldTrimmed_Report
 ```
 
-### Metrics included in the report
+### Universal script (examples)
 
-- **DER** (Diarization Error Rate) + Miss/FA/Conf breakdown
-- **JER** (Jaccard Error Rate)
-- **Boundary P/R/F1** (segmentation boundary precision/recall/F1)
-- **Purity/Coverage**
+**ROG-Dialog** — mount manual errata (same as above). **ROG-Art** and **CCPCL** — do **not** mount `DATASET_ERRATA.json` unless you have a dataset-specific file.
 
-### Additional CLI arguments
-
-- `--boundary_tolerance <float>`: tolerance window (seconds) for boundary precision/recall/F1. Default is `0.250`.
-- `--analysis_collar <float>`: collar (seconds) used for domain-level boxplots and domain comparison tables. Default is `0.25`.\n  The value is **snapped** to the nearest collar in `COLLAR_SETTINGS` (currently `0.0` and `0.25`) to avoid float mismatch.
-
-### Generate report on other "gold" rttm
-
-Copy "gold" rttm (e.g. rog-dialog.rttm from root of this project) to path `data/ROG-Dialog/ref_rttm/your.rttm` and then start the generator by:
-
-```
- 
-docker run --rm \
+```bash
+docker run --rm --entrypoint python \
   -v "$(pwd)/data/ROG-Dialog:/data/rog" \
   -v "$(pwd)/results/ROG-Dialog:/data/results" \
   -v "$(pwd)/reports:/data/reports" \
   -v "$(pwd)/evaluation/DATASET_ERRATA.json:/app/DATASET_ERRATA.json" \
   -e HOST_UID=$(id -u) -e HOST_GID=$(id -g) \
   benchmark-eval \
-  --gold /data/rog/ref_rttm/your.rttm \
+  generate_report_universal.py \
+  --dataset rog_dialog \
+  --gold /data/rog/ref_rttm/gold_standard_trimmed_15.rttm \
   --results_dir /data/results \
   --metadata /data/rog/docs/ROG-Dia-meta-speeches.tsv \
+  --errata /app/DATASET_ERRATA.json \
   --boundary_tolerance 0.250 \
   --analysis_collar 0.25 \
-  --output /data/reports/ROG-Dia_Test_Report
-
+  --output /data/reports/ROG_Dialog_Universal_Report
 ```
 
-**Customizing Errata:**
-
-If you find new errors in the dataset, simply edit evaluation/DATASET\_ERRATA.json on your host machine. Because we map it via \-v, the Docker container will immediately use your updated rules without requiring a rebuild.
-
-## **5\. Quick Evaluation (score.py)**
-
-If you just want the numbers for one model without generating the full report:
-
+```bash
+docker run --rm --entrypoint python \
+  -v "$(pwd)/data/ROG-Art:/data/rog" \
+  -v "$(pwd)/results/ROG-Art:/data/results" \
+  -v "$(pwd)/reports:/data/reports" \
+  -e HOST_UID=$(id -u) -e HOST_GID=$(id -g) \
+  benchmark-eval \
+  generate_report_universal.py \
+  --dataset rog_art \
+  --gold /data/rog/ref_rttm/default_gold_standard_trimmed.rttm \
+  --results_dir /data/results \
+  --metadata /data/rog/docs/ROG-speeches.tsv \
+  --boundary_tolerance 0.250 \
+  --analysis_collar 0.25 \
+  --output /data/reports/ROG_Art_Universal_Report
 ```
 
+```bash
+docker run --rm --entrypoint python \
+  -v "$(pwd)/data/CHILDES-CCPCL:/data/ccpcl" \
+  -v "$(pwd)/results/CHILDES-CCPCL:/data/results" \
+  -v "$(pwd)/reports:/data/reports" \
+  -e HOST_UID=$(id -u) -e HOST_GID=$(id -g) \
+  benchmark-eval \
+  generate_report_universal.py \
+  --dataset childes_ccpcl \
+  --gold /data/ccpcl/ref_rttm/ccpcl_gold_standard_trimmed.rttm \
+  --results_dir /data/results \
+  --metadata /data/ccpcl/docs/0demo.xlsx \
+  --boundary_tolerance 0.250 \
+  --analysis_collar 0.25 \
+  --output /data/reports/CCPCL_Universal_Report
+```
+
+## Metrics and CLI flags (summary)
+
+- DER, JER, Miss/FA/Conf, boundary P/R/F1, purity, coverage.
+- `--boundary_tolerance` (default `0.250` s) for boundary metrics.
+- `--analysis_collar` (default `0.25` s) for category/domain plots; snapped to `COLLAR_SETTINGS` in code.
+- `--no_auto_errata` — skip `AUTO_DATASET_ERRATA.json` beside `--gold` (reports).
+- `--no-auto-errata` — same for `score.py`.
+
+**Errata schema (per `file_id`):** optional `trim_start`, `trim_end`, `reason`, optional `source`. Merge: `trim_start` = max of both sources; `trim_end` = min. See [docs/evaluation.md](../docs/evaluation.md).
+
+**Executive summary:** Headline DER/JER/… are pooled only over per-file **`Status == OK`** (same set as the **Completed** numerator); failed files are listed in the deep dive but excluded from those headline aggregates (see note in generated report).
+
+## Quick score (`score.py`)
+
+**ROG-Dialog** with manual errata:
+
+```bash
 docker run --rm --entrypoint python \
   -v "$(pwd)/data/ROG-Dialog:/data/rog" \
   -v "$(pwd)/results/ROG-Dialog/pyannote_3_1:/data/system" \
   -v "$(pwd)/evaluation/DATASET_ERRATA.json:/app/DATASET_ERRATA.json" \
   benchmark-eval \
   score.py \
-  --gold /data/rog/ref_rttm/gold_standard.rttm \
+  --gold /data/rog/ref_rttm/gold_standard_trimmed_15.rttm \
   --system /data/system \
+  --errata /app/DATASET_ERRATA.json \
   --collar 0.25
-
 ```
+
+For ROG-Art/CCPCL, omit `--errata` and the errata volume unless you supply your own JSON.

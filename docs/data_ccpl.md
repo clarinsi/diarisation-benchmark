@@ -41,6 +41,10 @@ Reproducible layout and gold RTTM generation are driven by [`prepare_data_ccpcl.
 
    Defaults for merge and minimum segment length match [`gold_rttm_from_annotations.py`](../gold_rttm_from_annotations.py): **`merge_threshold=1.0`** s, **`min_duration=0.1`** s (see `ccpcl_data_process.py` argparse defaults).
 
+### Reporting (`0demo.xlsx` → primary category)
+
+Universal reports read participant rows from **`data/CHILDES-CCPCL/docs/0demo.xlsx`** (or the path you pass as `--metadata`). Chronological age in CHILDES form is often **`years;months`** (e.g. `3;11`). To avoid over-fragmented domain axis labels (one bucket per month), the loader maps **`Domain`** to **`Age {Y} / {Gender}`** using **whole years `Y`** only (the year part before `;`). When month detail was present, it is kept in **`Keywords`** as `chronological_age=…` next to `audio=` / `cha=` references. See [`evaluation/recording_metadata.py`](../evaluation/recording_metadata.py) (`load_ccpcl_0demo_xlsx`). Evaluation commands: [Evaluation and reporting](evaluation.md).
+
 ## 3. Stratified sampling methodology
 
 The full CCPCL release contains **N = 60** annotated sessions. The benchmark uses **n = 20** sessions selected with **proportionate stratified random sampling** by rounded age (3–6 years) and gender, preserving approximate balance (10 male / 10 female in the published sample).

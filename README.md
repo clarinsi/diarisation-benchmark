@@ -54,21 +54,14 @@ Inference backends: `models/pyannote/`, `models/nemo/`, `models/diarizen/`, and 
 
 ## Evaluation
 
-Evaluation is run through the benchmark report generator and uses model outputs versus reference RTTM.
-Check `reports/ROG-Dia_rog-auto-gold-rttm_Report/ROG_Dia_Benchmark_Report.md` for how the current evaluation is done.
+**Preferred:** from the repository root, run [`scripts/run_evaluation_report.sh`](scripts/run_evaluation_report.sh) (`--help` lists options; builds the eval Docker image or falls back to `uv`). Full detail (Docker/`uv`, **trimmed gold**, **errata** — manual file **ROG-Dialog only** in this repo, optional **auto** `AUTO_DATASET_ERRATA.json`, **OK-only** headline aggregates) is in **[docs/evaluation.md](docs/evaluation.md)**. Module-level notes: [evaluation/README.md](evaluation/README.md).
 
-The report includes:
-- diarisation error rate (DER), false alarm, missed speech and speaker confusion
-- Jaccard Error Rate (JER) and boundary precision/recall/F1 (boundary tolerance configurable)
-- purity / coverage and per-talk evaluation
-- model-specific latency and real-time factor
-- summarization of all models from `benchmark_metadata.json` files under the configured results directory (typically `results/<Dataset>/<run_folder>/`)
-
-The first iteration uses the existing reference RTTM outputs and computes diarisations with DER as primary metric.
+The Markdown report includes DER / Miss / FA / Conf, JER, boundary P/R/F1, purity and coverage, hardware RTF/VRAM, per-file deep dive, and (for `generate_report_universal.py`) category plots driven by dataset metadata.
 
 Additional report controls:
-- `--boundary_tolerance` controls boundary P/R/F1 tolerance window (seconds)
-- `--analysis_collar` controls which collar is used for domain plots and domain comparison tables (snapped to nearest value in `COLLAR_SETTINGS`)
+- `--boundary_tolerance` — boundary P/R/F1 tolerance (seconds)
+- `--analysis_collar` — collar for category/domain plots and tables (snapped to `COLLAR_SETTINGS`)
+- `--no_auto_errata` — skip merged auto errata beside `--gold` (reports); `--no-auto-errata` on `score.py`
 
 ## Python environments (uv)
 
@@ -172,9 +165,10 @@ sudo docker run --rm \
   -v "$(pwd)/evaluation/DATASET_ERRATA.json:/app/DATASET_ERRATA.json" \
   -e HOST_UID=$(id -u) -e HOST_GID=$(id -g) \
   benchmark-eval \
-  --gold /data/rog/ref_rttm/gold_trimmed.rttm \
+  --gold /data/rog/ref_rttm/gold_standard_trimmed_15.rttm \
   --results_dir /data/results \
   --metadata /data/rog/docs/ROG-Dia-meta-speeches.tsv \
+  --errata /app/DATASET_ERRATA.json \
   --output /data/reports/ROG-Dia-Trim
 ```
 

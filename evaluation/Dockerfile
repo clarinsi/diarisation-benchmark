@@ -20,5 +20,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY DATASET_ERRATA.json .
 COPY score.py .
 COPY generate_report.py .
+COPY gold_rttm_provenance.py .
+COPY errata_merge.py .
+COPY recording_metadata.py .
+COPY generate_report_universal.py .
 
 ENTRYPOINT ["python", "generate_report.py"]
