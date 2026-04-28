@@ -9,8 +9,12 @@ wording for stratification (primary category instead of ROG-only "domain").
 from __future__ import annotations
 
 import argparse
+import datetime as dt
+import json
+import math
 import os
 import sys
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -20,9 +24,53 @@ from pyannote.core import Annotation
 from tabulate import tabulate
 
 import generate_report as gr
+from dataset_summary import (
+    build_dataset_overview_dict,
+    build_dataset_overview_markdown,
+    utc_now_iso,
+)
 from errata_merge import load_merged_errata
 from gold_rttm_provenance import format_gold_rttm_report_section
 from recording_metadata import default_report_artifacts, load_metadata_for_dataset
+
+MACHINE_REPORT_SCHEMA_VERSION = "1.0"
+
+
+def _json_sanitize(x: Any) -> Any:
+    if x is None:
+        return None
+    if isinstance(x, dict):
+        return {str(k): _json_sanitize(v) for k, v in x.items()}
+    if isinstance(x, (list, tuple)):
+        return [_json_sanitize(v) for v in x]
+    if isinstance(x, bool):
+        return x
+    if isinstance(x, int):
+        return x
+    if isinstance(x, float):
+        return None if math.isnan(x) or math.isinf(x) else x
+    if isinstance(x, str):
+        return x
+    if isinstance(x, (np.floating,)):
+        f = float(x)
+        return None if math.isnan(f) or math.isinf(f) else f
+    if isinstance(x, (np.integer,)):
+        return int(x)
+    if isinstance(x, np.bool_):
+        return bool(x)
+    if isinstance(x, dt.datetime):
+        return x.isoformat()
+    if isinstance(x, pd.Timestamp):
+        return x.isoformat()
+    return str(x)
+
+
+def _resolve_machine_json_path(output_dir: str, report_filename: str, json_output: str | None) -> str:
+    if json_output:
+        p = json_output.strip()
+        return p if os.path.isabs(p) else os.path.join(output_dir, p)
+    stem = os.path.splitext(report_filename)[0]
+    return os.path.join(output_dir, f"{stem}.machine.json")
 
 
 def main() -> None:
@@ -73,6 +121,19 @@ def main() -> None:
         default="Primary category",
         help="Human-readable label for stratification axis (default: Primary category)",
     )
+    parser.add_argument(
+        "--audio_dir",
+        help="Override audio directory for dataset technical probing (default: audio_dir from gold RTTM header).",
+    )
+    parser.add_argument(
+        "--json_output",
+        help="Machine-readable JSON path (default: <report_filename>.machine.json in --output).",
+    )
+    parser.add_argument(
+        "--no_json",
+        action="store_true",
+        help="Do not write the machine-readable JSON report.",
+    )
     args = parser.parse_args()
 
     if not os.path.isfile(args.gold):
@@ -89,6 +150,11 @@ def main() -> None:
             "not evaluation/ or another subfolder.",
             flush=True,
         )
+        sys.exit(1)
+
+    audio_override = (args.audio_dir or "").strip() or None
+    if audio_override and not os.path.isdir(audio_override):
+        print(f"ERROR: --audio_dir is not a directory: {audio_override!r}", flush=True)
         sys.exit(1)
 
     category_label = args.category_axis_label.strip() or "Primary category"
@@ -275,6 +341,14 @@ def main() -> None:
                 pivot_named, letter_cols, maximize=maximize
             )
 
+    dataset_overview = build_dataset_overview_dict(
+        gold_rttm_path=args.gold,
+        gold_annots=gold_annots,
+        meta_dict=meta_dict,
+        errata_dict=errata_dict,
+        audio_dir_override=audio_override,
+    )
+
     print("Writing report...", flush=True)
     formatters = {
         "RTF": gr.fmt_rtf,
@@ -307,6 +381,7 @@ def main() -> None:
         f.write("\n")
 
         f.write("## 2. Executive Summary\n\n")
+        f.write(build_dataset_overview_markdown(dataset_overview, category_label))
         df_lead = df_sum[df_sum["Collar"] == 0.25].copy()
         df_lead = df_lead.rename(columns={"VRAM": "VRAM (GB)"})
         formatters["VRAM (GB)"] = gr.fmt_vram
@@ -581,6 +656,63 @@ def main() -> None:
                     f.write("\n\n")
             f.write("\n\n---\n\n")
 
+    json_path: str | None = None
+    if not args.no_json:
+        json_path = _resolve_machine_json_path(args.output, report_filename, args.json_output)
+        files_payload: dict[str, Any] = {}
+        for fid in sorted(deep_dive_data.keys()):
+            by_collar: dict[str, Any] = {}
+            for collar, models in deep_dive_data[fid].items():
+                if not models:
+                    continue
+                ck = str(float(collar))
+                by_collar[ck] = {m: st for m, st in models.items()}
+            files_payload[fid] = by_collar
+
+        payload: dict[str, Any] = {
+            "schema_version": MACHINE_REPORT_SCHEMA_VERSION,
+            "generated_at": utc_now_iso(),
+            "report": {
+                "title": report_title,
+                "dataset": args.dataset,
+                "gold_rttm": os.path.abspath(os.path.normpath(args.gold)),
+                "results_dir": os.path.abspath(os.path.normpath(args.results_dir)),
+                "metadata": os.path.abspath(os.path.normpath(args.metadata))
+                if args.metadata
+                else None,
+                "boundary_tolerance": float(args.boundary_tolerance),
+                "analysis_collar_requested": float(args.analysis_collar),
+                "domain_collar": float(domain_collar),
+                "category_axis_label": category_label,
+                "markdown_report_filename": report_filename,
+                "audio_dir_override": audio_override,
+            },
+            "gold_provenance": {
+                "comments": list(dataset_overview["provenance"]["comments"]),
+                "gold_rttm": dict(dataset_overview["provenance"]["gold_rttm"]),
+                "trim_params": dict(dataset_overview["provenance"]["trim_params"]),
+            },
+            "dataset": {
+                "files": [
+                    dataset_overview["files"][fid]
+                    for fid in sorted(dataset_overview["files"].keys())
+                ],
+            },
+            "dataset_aggregate": dataset_overview["aggregate"],
+            "models": {
+                "huggingface_links": dict(model_links),
+                "summary_rows": df_sum.to_dict(orient="records"),
+            },
+            "files": files_payload,
+            "errata": {
+                "merged_per_file": errata_dict,
+                "merge_meta": errata_meta,
+            },
+        }
+        safe_payload = _json_sanitize(payload)
+        with open(json_path, "w", encoding="utf-8") as jf:
+            json.dump(safe_payload, jf, indent=2, ensure_ascii=False, allow_nan=False)
+
     try:
         uid = int(os.environ.get("HOST_UID", 0))
         gid = int(os.environ.get("HOST_GID", 0))
@@ -588,7 +720,10 @@ def main() -> None:
             gr.fix_permissions(args.output, uid, gid)
     except Exception:
         pass
-    print(f"Done. Report at {args.output} ({report_path})", flush=True)
+    done_msg = f"Done. Report at {args.output} ({report_path})"
+    if json_path:
+        done_msg += f" | Machine JSON: {json_path}"
+    print(done_msg, flush=True)
 
 
 if __name__ == "__main__":

@@ -11,16 +11,19 @@ From the **repository root**, use the helper script to build the evaluation Dock
 ./scripts/run_evaluation_report.sh -y
 ./scripts/run_evaluation_report.sh --dataset rog_art -y
 ./scripts/run_evaluation_report.sh --dataset childes_ccpcl --gold /path/to/ccpcl_gold_standard_trimmed.rttm -y
+./scripts/run_evaluation_report.sh --dataset all --yes
 ```
 
 - **ROG-Dialog:** uses `evaluation/DATASET_ERRATA.json` (manual UEM for that dataset).
 - **ROG-Art / CCPCL:** does not use the repo manual errata file; an empty manual JSON is passed so only **auto** `AUTO_DATASET_ERRATA.json` beside the gold (if present) is merged.
 
-Options include `--gold`, `--output`, `--results-dir`, `--metadata`, `--use-docker`, `--use-uv`, and `--` to forward extra arguments to the report generator. If both Docker and `uv` fail, the script prints install hints and exits non-zero.
+Options include `--gold`, `--output`, `--results-dir`, `--metadata`, `--use-docker`, `--use-uv`, `--rebuild`, and `--` to forward extra arguments to the report generator. `-y`, `--yes`, `--batch`, and `--non-interactive` all skip prompts. If both Docker and `uv` fail, the script prints install hints and exits non-zero.
 
-When using **Docker**, the script mounts the **directory** that contains `--gold` (not the RTTM file alone) so **`AUTO_DATASET_ERRATA.json`** in that same folder is visible in the container. Plain `docker run` examples that bind only a single `.rttm` file would not see auto errata unless you mount the whole `ref_rttm` directory (or add a second `-v` for the JSON).
+Use `--dataset all` to run `rog_dialog`, `rog_art`, and `childes_ccpcl` in that order with standard per-dataset paths. Dataset-specific overrides (`--gold`, `--metadata`, `--results-dir`, `--output`, `--errata`) are intentionally rejected in `all` mode; global flags and forwarded report-generator args apply to every dataset.
 
-For gold RTTM construction, trimming, and provenance headers, see [Reference RTTM design](reference_rttm_design.md). For preparing data and Python environments, see [Data preparation](data_preparation.md).
+When using **Docker**, the script reuses the existing image tag when present and builds only when missing; pass `--rebuild` (or `--force-rebuild`) after code/dependency changes. The image no longer bakes in `evaluation/DATASET_ERRATA.json`; the runner bind-mounts the resolved manual errata file (or a temporary empty JSON for datasets without manual errata), so the same image can evaluate multiple datasets. The script also mounts the **directory** that contains `--gold` (not the RTTM file alone) so **`AUTO_DATASET_ERRATA.json`** in that same folder is visible in the container. Plain `docker run` examples that bind only a single `.rttm` file would not see auto errata unless you mount the whole `ref_rttm` directory (or add a second `-v` for the JSON).
+
+For gold RTTM construction, trimming, and provenance headers, see [Reference RTTM design](reference_rttm_design.md). For preparing data and Python environments, see [Data preparation](data_preparation.md). For inference execution and the complete workflow, see [Inference guide](inference.md) and [End-to-end pipeline](end_to_end.md).
 
 ## Prerequisites
 
@@ -35,7 +38,7 @@ For published-style benchmarks, prefer **silence-trimmed** gold when it exists f
 
 | Dataset | Example trimmed gold path |
 | --- | --- |
-| ROG-Dialog | `data/ROG-Dialog/ref_rttm/gold_standard_trimmed_15.rttm` |
+| ROG-Dialog | `data/ROG-Dialog/ref_rttm/default_gold_standard_trimmed.rttm` |
 | ROG-Art | `data/ROG-Art/ref_rttm/default_gold_standard_trimmed.rttm` |
 | CHILDES-CCPCL | `data/CHILDES-CCPCL/ref_rttm/ccpcl_gold_standard_trimmed.rttm` |
 
@@ -70,7 +73,7 @@ docker run --rm --entrypoint python \
   -v "$(pwd)/evaluation/DATASET_ERRATA.json:/app/DATASET_ERRATA.json" \
   benchmark-eval \
   score.py \
-  --gold /data/rog/ref_rttm/gold_standard_trimmed_15.rttm \
+  --gold /data/rog/ref_rttm/default_gold_standard_trimmed.rttm \
   --system /data/system \
   --errata /app/DATASET_ERRATA.json \
   --collar 0.25
@@ -104,7 +107,7 @@ docker run --rm \
   -v "$(pwd)/evaluation/DATASET_ERRATA.json:/app/DATASET_ERRATA.json" \
   -e HOST_UID=$(id -u) -e HOST_GID=$(id -g) \
   benchmark-eval \
-  --gold /data/rog/ref_rttm/gold_standard_trimmed_15.rttm \
+  --gold /data/rog/ref_rttm/default_gold_standard_trimmed.rttm \
   --results_dir /data/results \
   --metadata /data/rog/docs/ROG-Dia-meta-speeches.tsv \
   --errata /app/DATASET_ERRATA.json \
@@ -131,7 +134,7 @@ docker run --rm --entrypoint python \
   benchmark-eval \
   generate_report_universal.py \
   --dataset rog_dialog \
-  --gold /data/rog/ref_rttm/gold_standard_trimmed_15.rttm \
+  --gold /data/rog/ref_rttm/default_gold_standard_trimmed.rttm \
   --results_dir /data/results \
   --metadata /data/rog/docs/ROG-Dia-meta-speeches.tsv \
   --errata /app/DATASET_ERRATA.json \
@@ -178,7 +181,55 @@ docker run --rm --entrypoint python \
   --output /data/reports/CCPCL_Universal_Report
 ```
 
-Optional: `--report_title`, `--report_filename`, `--category_axis_label` (universal script).
+Optional: `--report_title`, `--report_filename`, `--category_axis_label`, `--audio_dir` (override directory used to probe audio format / sample rate / nominal PCM bitrate for the dataset overview), `--json_output`, `--no_json` (universal script).
+
+## Machine-readable report JSON (`*.machine.json`)
+
+`generate_report_universal.py` writes a second artifact next to the Markdown report: **`<report_filename_stem>.machine.json`** inside `--output` (for example `ROG_Dialog_Benchmark_Report.machine.json` when using the default Markdown name). Use **`--no_json`** to skip it, or **`--json_output path`** to set the file path (relative paths are resolved under `--output` unless absolute).
+
+**Compatibility:** the document includes **`schema_version`** (currently **`"1.0"`**). Non-breaking additions (new optional keys) may appear without a bump; **removing or renaming keys** should bump `schema_version`.
+
+**Top-level keys (v1.0):**
+
+| Key | Meaning |
+| --- | --- |
+| `schema_version` | String schema tag for downstream parsers. |
+| `generated_at` | UTC ISO-8601 timestamp. |
+| `report` | Run metadata: title, `dataset`, absolute paths (`gold_rttm`, `results_dir`, `metadata`), evaluation knobs (`boundary_tolerance`, `analysis_collar_requested`, `domain_collar`), `markdown_report_filename`, optional `audio_dir_override`. |
+| `gold_provenance` | Verbatim leading `comments` from the gold RTTM plus parsed string maps `gold_rttm` and `trim_params`. |
+| `dataset` | `files`: array of per-recording records (`file_id`, `gold_timeline_span_s`, `gold_speech_s`, `metadata`, `errata`, optional `audio_probe`). |
+| `dataset_aggregate` | Counts, duration aggregates, category histograms, and `audio_summary` (formats / sample rates when probing succeeded). |
+| `models` | `huggingface_links` (display name → model id) and `summary_rows` (same metrics as the executive summary table, one row per model × collar). |
+| `files` | Nested map: `file_id` → collar string (e.g. `"0.25"`) → model display name → per-file metric dict (as in the deep-dive tables). |
+| `errata` | `merged_per_file` evaluation map and optional `merge_meta` from the errata loader. |
+
+**Example (truncated):**
+
+```json
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-04-28T10:15:00+00:00",
+  "report": {
+    "title": "ROG-Dialog Benchmark Report",
+    "dataset": "rog_dialog",
+    "domain_collar": 0.25
+  },
+  "dataset": {
+    "files": [
+      {
+        "file_id": "ROG-Dia-Example",
+        "gold_timeline_span_s": 120.5,
+        "gold_speech_s": 95.0,
+        "audio_probe": null
+      }
+    ]
+  },
+  "models": {
+    "huggingface_links": { "pyannote 3 1": "pyannote/speaker-diarization-3.1" },
+    "summary_rows": []
+  }
+}
+```
 
 ## Executive summary: how aggregates work
 
@@ -198,3 +249,4 @@ Participant metadata from `0demo.xlsx` uses CHILDES-style chronological age (`ye
 | `evaluation/errata_merge.py` | Manual + auto errata load/merge + markdown tables |
 | `evaluation/gold_rttm_provenance.py` | Gold header parsing and §0 markdown |
 | `evaluation/recording_metadata.py` | ROG TSV + CCPCL xlsx → `Domain` / metadata |
+| `evaluation/dataset_summary.py` | Dataset overview + optional audio probing (Markdown §2 and machine JSON) |

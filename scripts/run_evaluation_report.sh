@@ -6,6 +6,7 @@
 #   ./scripts/run_evaluation_report.sh --help
 #   ./scripts/run_evaluation_report.sh -y
 #   ./scripts/run_evaluation_report.sh --dataset rog_art -y
+#   ./scripts/run_evaluation_report.sh --dataset all --yes
 #
 set -euo pipefail
 
@@ -22,6 +23,7 @@ RESULTS_DIR=""
 ERRATA_USER=""
 SKIP_CONFIRM=0
 USE_DOCKER=""
+REBUILD_IMAGE=0
 NO_AUTO_ERRATA=0
 BOUNDARY_TOLERANCE="0.250"
 ANALYSIS_COLLAR="0.25"
@@ -41,17 +43,21 @@ Usage: ./scripts/run_evaluation_report.sh [options] [-- extra args for generate_
   Run from the repository root (contains data/, results/, evaluation/).
 
 Options:
-  --dataset rog_dialog|rog_art|childes_ccpcl   (default: rog_dialog; aliases: ccpcl → childes_ccpcl)
+  --dataset rog_dialog|rog_art|childes_ccpcl|all
+                            (default: rog_dialog; aliases: ccpcl → childes_ccpcl)
   --gold PATH
   --output PATH
   --metadata PATH
   --results-dir PATH
   --image NAME              Docker image tag (default: benchmark-eval)
+  --rebuild, --force-rebuild
+                            Rebuild Docker image even if the tag already exists
   --boundary-tolerance F    (default: 0.250)
   --analysis-collar F        (default: 0.25)
   --errata PATH              Manual UEM JSON (overrides ROG-Dialog default; for other datasets, default is to skip)
   --no-auto-errata
-  -y, --yes                  No confirmation prompt; non-interactive default is continue without ask
+  -y, --yes, --batch, --non-interactive
+                            No confirmation prompt; non-interactive default is continue without ask
   --use-docker                Use Docker only (no uv fallback)
   --use-uv                    Use uv only (no Docker)
   -h, --help
@@ -60,6 +66,8 @@ Options:
 Default trimmed gold, metadata, and output (under reports/) match docs/evaluation.md.
 ROG-Dialog uses evaluation/DATASET_ERRATA.json; ROG-Art and CCPCL do not use that file by default
 (empty manual errata, auto errata can still load beside gold).
+With --dataset all, dataset-specific path overrides (--gold/--metadata/--results-dir/--output/--errata)
+are intentionally rejected; global flags and forwarded args apply to every dataset.
 EOF
 }
 
@@ -76,10 +84,11 @@ while [[ $# -gt 0 ]]; do
     --results-dir) RESULTS_DIR="$2"; shift 2 ;;
     --errata) ERRATA_USER="$2"; shift 2 ;;
     --image) BENCHMARK_EVAL_IMAGE="$2"; shift 2 ;;
+    --rebuild|--force-rebuild) REBUILD_IMAGE=1; shift ;;
     --boundary-tolerance) BOUNDARY_TOLERANCE="$2"; shift 2 ;;
     --analysis-collar) ANALYSIS_COLLAR="$2"; shift 2 ;;
     --no-auto-errata) NO_AUTO_ERRATA=1; shift ;;
-    -y|--yes) SKIP_CONFIRM=1; shift ;;
+    -y|--yes|--batch|--non-interactive) SKIP_CONFIRM=1; shift ;;
     --use-docker) USE_DOCKER=1; shift ;;
     --use-uv) USE_DOCKER=0; shift ;;
     --) shift; REMAINDER=("$@"); break ;;
@@ -91,15 +100,61 @@ done
 DS="$(echo "$DATASET" | tr '[:upper:]' '[:lower:]' | tr '-' '_')"
 case "$DS" in
   ccpcl) DS=childes_ccpcl ;;
-  rog_dialog|rog_art|childes_ccpcl) ;;
+  rog_dialog|rog_art|childes_ccpcl|all) ;;
   *) die "Invalid --dataset: $DATASET" ;;
 esac
 DATASET="$DS"
 
+if [[ "$DATASET" == "all" ]]; then
+  if [[ -n "$GOLD" || -n "$METADATA" || -n "$RESULTS_DIR" || -n "$OUTPUT" || -n "$ERRATA_USER" ]]; then
+    die "--dataset all does not accept --gold/--metadata/--results-dir/--output/--errata overrides"
+  fi
+
+  if [[ "$SKIP_CONFIRM" != 1 ]] && [[ -t 0 ]] && [[ -t 1 ]]; then
+    echo "--- Report generation ---" >&2
+    echo "  dataset:   all (rog_dialog, rog_art, childes_ccpcl)" >&2
+    echo "  image:     $BENCHMARK_EVAL_IMAGE" >&2
+    echo "  mode:      ${USE_DOCKER:-auto (Docker then uv)}" >&2
+    read -r -p "Proceed? [Y/n] " _a || true
+    if [[ -n "${_a:-}" && "${_a:0:1}" =~ [nN] ]]; then die "Aborted."; fi
+  fi
+
+  first=1
+  for ds in rog_dialog rog_art childes_ccpcl; do
+    echo "================================================================================" >&2
+    echo " run_evaluation_report.sh: running dataset ${ds}" >&2
+    echo "================================================================================" >&2
+    child_args=(
+      --dataset "$ds"
+      --image "$BENCHMARK_EVAL_IMAGE"
+      --boundary-tolerance "$BOUNDARY_TOLERANCE"
+      --analysis-collar "$ANALYSIS_COLLAR"
+      --yes
+    )
+    if [[ "$NO_AUTO_ERRATA" -eq 1 ]]; then
+      child_args+=(--no-auto-errata)
+    fi
+    if [[ "$USE_DOCKER" == "1" ]]; then
+      child_args+=(--use-docker)
+    elif [[ "$USE_DOCKER" == "0" ]]; then
+      child_args+=(--use-uv)
+    fi
+    if [[ "$REBUILD_IMAGE" -eq 1 && "$first" -eq 1 ]]; then
+      child_args+=(--rebuild)
+    fi
+    first=0
+    if [[ ${#REMAINDER[@]} -gt 0 ]]; then
+      child_args+=(-- "${REMAINDER[@]}")
+    fi
+    bash "$0" "${child_args[@]}"
+  done
+  exit 0
+fi
+
 # defaults (host paths) — trimmed gold / universal report folders
 case "$DATASET" in
   rog_dialog)
-    GOLD=${GOLD:-"$REPO_ROOT/data/ROG-Dialog/ref_rttm/gold_standard_trimmed_15.rttm"}
+    GOLD=${GOLD:-"$REPO_ROOT/data/ROG-Dialog/ref_rttm/default_gold_standard_trimmed.rttm"}
     METADATA=${METADATA:-"$REPO_ROOT/data/ROG-Dialog/docs/ROG-Dia-meta-speeches.tsv"}
     RESULTS_DIR=${RESULTS_DIR:-"$REPO_ROOT/results/ROG-Dialog"}
     OUTPUT=${OUTPUT:-"$REPO_ROOT/reports/ROG_Dialog_Universal_Report"}
@@ -177,12 +232,16 @@ else
   trap 'rm -f "$ERRATA_FOR_PY"' EXIT
 fi
 
-build_docker_image() {
+ensure_docker_image() {
   if ! command -v docker >/dev/null 2>&1; then
     return 1
   fi
   if ! docker info >/dev/null 2>&1; then
     return 1
+  fi
+  if [[ "$REBUILD_IMAGE" -ne 1 ]] && docker image inspect "$BENCHMARK_EVAL_IMAGE" >/dev/null 2>&1; then
+    info "Using existing Docker image: $BENCHMARK_EVAL_IMAGE (pass --rebuild to rebuild)"
+    return 0
   fi
   info "docker build -t $BENCHMARK_EVAL_IMAGE -f evaluation/Dockerfile evaluation/"
   docker build -t "$BENCHMARK_EVAL_IMAGE" -f "$REPO_ROOT/evaluation/Dockerfile" "$REPO_ROOT/evaluation"
@@ -274,14 +333,14 @@ fi
 
 if [[ "$USE_DOCKER" == "1" ]]; then
   command -v docker >/dev/null 2>&1 || { die "Docker not found (--use-docker)."; FAIL_HINT; exit 1; }
-  build_docker_image || exit 1
+  ensure_docker_image || exit 1
   run_docker
   exit 0
 fi
 
 # Auto: try Docker, then uv
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-  if build_docker_image; then
+  if ensure_docker_image; then
     if run_docker; then
       exit 0
     fi

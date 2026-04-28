@@ -1,6 +1,32 @@
 # diarisation-benchmark
 First steps in setting up a diarisation benchmark for Slovenian and related languages
 
+## Quick Start
+
+Run from repository root:
+
+```bash
+# 1) Prepare dataset artifacts (gold RTTM, optional trimming)
+./prepare_data.sh --yes rog_dialog
+```
+
+```bash
+# 2) Build inference backends
+./build_backends.sh
+```
+
+```bash
+# 3) Run inference
+./run_inference.sh --dataset ROG-Dialog --hf-token "$HF_TOKEN"
+```
+
+```bash
+# 4) Evaluate and generate report
+./scripts/run_evaluation_report.sh --dataset rog_dialog --yes
+```
+
+Detailed full-flow docs: [End-to-end pipeline](docs/end_to_end.md) and [Inference guide](docs/inference.md).
+
 ## Dataset
 
 We currently support three datasets:
@@ -54,14 +80,18 @@ Inference backends: `models/pyannote/`, `models/nemo/`, `models/diarizen/`, and 
 
 ## Evaluation
 
-**Preferred:** from the repository root, run [`scripts/run_evaluation_report.sh`](scripts/run_evaluation_report.sh) (`--help` lists options; builds the eval Docker image or falls back to `uv`). Full detail (Docker/`uv`, **trimmed gold**, **errata** — manual file **ROG-Dialog only** in this repo, optional **auto** `AUTO_DATASET_ERRATA.json`, **OK-only** headline aggregates) is in **[docs/evaluation.md](docs/evaluation.md)**. Module-level notes: [evaluation/README.md](evaluation/README.md).
+**Preferred:** from the repository root, run [`scripts/run_evaluation_report.sh`](scripts/run_evaluation_report.sh) (`--help` lists options; reuses/builds the eval Docker image or falls back to `uv`; `--dataset all --yes` runs every dataset with defaults). Full detail (Docker/`uv`, **trimmed gold**, **errata** — manual file **ROG-Dialog only** in this repo, optional **auto** `AUTO_DATASET_ERRATA.json`, **OK-only** headline aggregates) is in **[docs/evaluation.md](docs/evaluation.md)**. Module-level notes: [evaluation/README.md](evaluation/README.md).
 
 The Markdown report includes DER / Miss / FA / Conf, JER, boundary P/R/F1, purity and coverage, hardware RTF/VRAM, per-file deep dive, and (for `generate_report_universal.py`) category plots driven by dataset metadata.
+
+`generate_report_universal.py` also emits a **machine-readable JSON** file alongside the Markdown report (default name `<report_stem>.machine.json`, **`schema_version` `1.0`**). See [Machine-readable report JSON](docs/evaluation.md#machine-readable-report-json-machinejson) in **docs/evaluation.md** for the stable top-level keys and compatibility rules.
 
 Additional report controls:
 - `--boundary_tolerance` — boundary P/R/F1 tolerance (seconds)
 - `--analysis_collar` — collar for category/domain plots and tables (snapped to `COLLAR_SETTINGS`)
 - `--no_auto_errata` — skip merged auto errata beside `--gold` (reports); `--no-auto-errata` on `score.py`
+- `--audio_dir`, `--json_output`, `--no_json` — universal report only; dataset technical probing and JSON output path (see **docs/evaluation.md**)
+- `scripts/run_evaluation_report.sh`: `--dataset all`, `--batch` / `--non-interactive`, and `--rebuild` for forced Docker rebuilds
 
 ## Python environments (uv)
 
@@ -165,7 +195,7 @@ sudo docker run --rm \
   -v "$(pwd)/evaluation/DATASET_ERRATA.json:/app/DATASET_ERRATA.json" \
   -e HOST_UID=$(id -u) -e HOST_GID=$(id -g) \
   benchmark-eval \
-  --gold /data/rog/ref_rttm/gold_standard_trimmed_15.rttm \
+  --gold /data/rog/ref_rttm/default_gold_standard_trimmed.rttm \
   --results_dir /data/results \
   --metadata /data/rog/docs/ROG-Dia-meta-speeches.tsv \
   --errata /app/DATASET_ERRATA.json \

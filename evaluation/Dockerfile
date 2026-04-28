@@ -16,13 +16,13 @@ RUN pip install --no-cache-dir --upgrade pip
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Kopiramo kodo in privzeto konfiguracijo
-COPY DATASET_ERRATA.json .
+# Kopiramo kodo; dataset errata is mounted by the runner, not baked into the image.
 COPY score.py .
 COPY generate_report.py .
 COPY gold_rttm_provenance.py .
 COPY errata_merge.py .
 COPY recording_metadata.py .
+COPY dataset_summary.py .
 COPY generate_report_universal.py .
 
 ENTRYPOINT ["python", "generate_report.py"]

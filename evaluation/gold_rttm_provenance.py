@@ -30,6 +30,21 @@ _GOLD_RTTM_KEY_HELP: dict[str, str] = {
     "audio_dir": "Audio directory used for trimming / filtering",
 }
 
+_TRIM_PARAMS_KEY_HELP: dict[str, str] = {
+    "pitch_floor": "Lower bound (Hz) for Praat pitch tracking when locating voiced speech at segment edges",
+    "pitch_ceiling": "Upper bound (Hz) for Praat pitch tracking",
+    "intensity_drop_db": "dB below local max intensity treated as non-speech for edge refinement",
+    "guard_ms": "Minimum margin (ms) kept at trimmed boundaries after VAD",
+    "max_trim_s": "Maximum seconds an edge may move inward (caps aggressive trims)",
+    "min_duration": "Segments shorter than this (s) after trimming are dropped",
+    "pad_s": "Padding (s) added back after trimming to avoid cutting into speech",
+    "time_step": "Analysis frame step (s) for pitch/intensity sampling",
+    "method": "VAD mode: pitch_or_intensity | pitch_only | intensity_only",
+    "trim_silence_within": "If true, split segments at internal silences (not only edge trim)",
+    "min_silence_dur": "Minimum internal silence duration (s) required to split a segment",
+    "verbose": "If true, trimmer emits detailed per-file diagnostics to the console",
+}
+
 
 def read_leading_rttm_comments(path: str, max_lines: int = 2) -> list[str]:
     """
@@ -153,7 +168,7 @@ def format_gold_rttm_report_section(gold_path: str, errata_meta: dict[str, Any] 
         if tkv:
             lines.append("**Decoded trim parameters (from second header line):**")
             lines.append("")
-            lines.append(_format_kv_markdown_table(tkv, {}))
+            lines.append(_format_kv_markdown_table(tkv, _TRIM_PARAMS_KEY_HELP))
 
     if errata_meta:
         from errata_merge import format_errata_report_md

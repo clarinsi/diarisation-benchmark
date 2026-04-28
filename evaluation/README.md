@@ -2,9 +2,11 @@
 
 This module computes diarization and segmentation metrics (DER, JER, boundary P/R/F1, purity, coverage) and writes Markdown reports with plots. It supports **UEM** via merged **manual** and **auto** errata JSON next to the gold RTTM.
 
-**Preferred way to run the universal report:** from the repository root, [`../scripts/run_evaluation_report.sh`](../scripts/run_evaluation_report.sh) (builds the Docker image or uses `uv`, then runs `generate_report_universal.py` with trimmed-gold defaults).
+**Preferred way to run the universal report:** from the repository root, [`../scripts/run_evaluation_report.sh`](../scripts/run_evaluation_report.sh) (reuses/builds the Docker image or uses `uv`, then runs `generate_report_universal.py` with trimmed-gold defaults). Use `--dataset all --yes` to evaluate all supported datasets in sequence; `--batch` / `--non-interactive` are aliases for `--yes`, and `--rebuild` forces a Docker image rebuild.
 
 **Full operator guide (Docker, datasets, errata, aggregates):** [../docs/evaluation.md](../docs/evaluation.md)
+
+**Machine-readable output:** `generate_report_universal.py` writes **`<report_filename_stem>.machine.json`** in `--output` by default (for example `ROG_Dialog_Benchmark_Report.machine.json`). Use `--no_json` to skip or `--json_output` to set the path. Schema and keys: [Machine-readable report JSON](../docs/evaluation.md#machine-readable-report-json-machinejson).
 
 ## Structure
 
@@ -17,6 +19,7 @@ This module computes diarization and segmentation metrics (DER, JER, boundary P/
 | `generate_report_universal.py` | Same metrics for `rog_dialog`, `rog_art`, `childes_ccpcl`. |
 | `gold_rttm_provenance.py` | §0 Gold RTTM: header comments, decoded KV tables, errata subsection. |
 | `recording_metadata.py` | ROG TSV + CCPCL `0demo.xlsx` → `Domain` / fields (CCPCL `Domain` uses **whole-year** age for stratification). |
+| `dataset_summary.py` | Dataset overview stats and optional audio probing (Markdown §2 + `.machine.json`). |
 | `score.py` | Quick per-run DER breakdown (CLI). |
 
 ## Local Python (uv)
@@ -46,7 +49,7 @@ docker build -t benchmark-eval .
 
 For benchmark-style evaluation, prefer **trimmed** gold RTTMs when available (see [Reference RTTM design](../docs/reference_rttm_design.md)):
 
-- ROG-Dialog: `data/ROG-Dialog/ref_rttm/gold_standard_trimmed_15.rttm`
+- ROG-Dialog: `data/ROG-Dialog/ref_rttm/default_gold_standard_trimmed.rttm`
 - ROG-Art: `data/ROG-Art/ref_rttm/default_gold_standard_trimmed.rttm`
 - CCPCL: `data/CHILDES-CCPCL/ref_rttm/ccpcl_gold_standard_trimmed.rttm`
 
@@ -62,7 +65,7 @@ docker run --rm \
   -v "$(pwd)/evaluation/DATASET_ERRATA.json:/app/DATASET_ERRATA.json" \
   -e HOST_UID=$(id -u) -e HOST_GID=$(id -g) \
   benchmark-eval \
-  --gold /data/rog/ref_rttm/gold_standard_trimmed_15.rttm \
+  --gold /data/rog/ref_rttm/default_gold_standard_trimmed.rttm \
   --results_dir /data/results \
   --metadata /data/rog/docs/ROG-Dia-meta-speeches.tsv \
   --errata /app/DATASET_ERRATA.json \
@@ -85,7 +88,7 @@ docker run --rm --entrypoint python \
   benchmark-eval \
   generate_report_universal.py \
   --dataset rog_dialog \
-  --gold /data/rog/ref_rttm/gold_standard_trimmed_15.rttm \
+  --gold /data/rog/ref_rttm/default_gold_standard_trimmed.rttm \
   --results_dir /data/results \
   --metadata /data/rog/docs/ROG-Dia-meta-speeches.tsv \
   --errata /app/DATASET_ERRATA.json \
@@ -151,7 +154,7 @@ docker run --rm --entrypoint python \
   -v "$(pwd)/evaluation/DATASET_ERRATA.json:/app/DATASET_ERRATA.json" \
   benchmark-eval \
   score.py \
-  --gold /data/rog/ref_rttm/gold_standard_trimmed_15.rttm \
+  --gold /data/rog/ref_rttm/default_gold_standard_trimmed.rttm \
   --system /data/system \
   --errata /app/DATASET_ERRATA.json \
   --collar 0.25

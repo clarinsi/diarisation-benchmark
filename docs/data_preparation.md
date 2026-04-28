@@ -128,7 +128,7 @@ uv sync
 uv run python generate_report.py --help
 ```
 
-The Docker image for evaluation installs from [`evaluation/requirements.txt`](../evaluation/requirements.txt) (exported from that folder’s uv project). **Preferred:** run the universal report from the repo root with **[`scripts/run_evaluation_report.sh`](../scripts/run_evaluation_report.sh)** (Docker or `uv` fallback). **Manual** command-line examples, `score.py`, errata, and trimmed gold paths are in **[Evaluation and reporting](evaluation.md)**.
+The Docker image for evaluation installs from [`evaluation/requirements.txt`](../evaluation/requirements.txt) (exported from that folder’s uv project). **Preferred:** run the universal report from the repo root with **[`scripts/run_evaluation_report.sh`](../scripts/run_evaluation_report.sh)** (Docker or `uv` fallback). **Manual** command-line examples, `score.py`, errata, and trimmed gold paths are in **[Evaluation and reporting](evaluation.md)**. The universal report also writes a **`.machine.json`** file (versioned schema); see [Machine-readable report JSON](evaluation.md#machine-readable-report-json-machinejson).
 
 ## Common options and defaults
 
@@ -183,6 +183,8 @@ Behaviour is identical to `./prepare_data.sh <alias> …` for a single dataset.
 
 ## Related documentation
 
+- [Inference guide](inference.md)
+- [End-to-end pipeline](end_to_end.md)
 - [Evaluation and reporting](evaluation.md)
 - [Reference RTTM design](reference_rttm_design.md)
 - [CCPCL corpus appendix (methodology and sample table)](data_ccpl.md)
