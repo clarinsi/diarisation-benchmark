@@ -12,12 +12,30 @@ This repository ships one shell script per benchmark dataset under the project r
 ./prepare_data.sh ccpcl
 ./prepare_data.sh rog_art
 ./prepare_data.sh rog_dialog
+./prepare_data.sh --yes all
 
 # Run every prepare_data_*.sh script in sorted order (separator lines between scripts)
 ./prepare_data.sh all
 ```
 
 Run `./prepare_data.sh --help` for the same long help as running with no arguments.
+
+## Non-interactive mode
+
+Use `-y`, `--yes`, `--batch`, or `--non-interactive` with [`prepare_data.sh`](../prepare_data.sh) to run without prompts:
+
+```bash
+./prepare_data.sh --yes all
+export DIABENCH_PYTHON="uv run --group trim python"
+./prepare_data.sh --batch rog_dialog
+```
+
+In non-interactive mode:
+
+- Silence trimming is enabled by default for datasets that support it.
+- CCPCL stops with a non-zero exit code if the available `.wav` stems do not exactly match the embedded benchmark list.
+- If trimming was requested but the trim environment is unavailable (for example missing `numpy` or `praat-parselmouth`) or the audio directory is invalid, the run exits non-zero instead of continuing without a trimmed RTTM.
+- Download, unzip, and Python failures still stop the wrapper because the underlying scripts use `set -e`.
 
 ## Python environment (uv)
 

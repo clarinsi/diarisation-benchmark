@@ -3,6 +3,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DIABENCH_PREPARE_NONINTERACTIVE="${DIABENCH_PREPARE_NONINTERACTIVE:-0}"
 
 discover_dataset_aliases() {
     local f base
@@ -25,7 +26,7 @@ is_known_alias() {
 }
 
 usage_short() {
-    printf 'Usage: %s <dataset|all> [args...]\n' "$(basename "$0")"
+    printf 'Usage: %s [--yes|--batch|--non-interactive] <dataset|all> [args...]\n' "$(basename "$0")"
     printf '       %s -h|--help\n' "$(basename "$0")"
     echo
     echo "Datasets (from prepare_data_<name>.sh in this directory):"
@@ -55,6 +56,8 @@ Common behaviour (all per-dataset scripts)
   - Scripts use "set -e" and stop on the first failing command.
   - Interactive prompts: silence trimming (Parselmouth) where the underlying Python
     pipeline supports it; CCPCL also prompts when WAV stems differ from the benchmark list.
+  - Non-interactive mode: pass -y / --yes / --batch / --non-interactive to skip prompts,
+    enable silence trimming by default, and stop on CCPCL WAV mismatches or trim setup errors.
   - Gold RTTM merge/min-duration defaults come from gold_rttm_from_annotations.py
     (merge_threshold=1.0 s, min_duration=0.1 s) unless you change the Python invocation.
 
@@ -66,10 +69,11 @@ Optional positional argument (gold RTTM basename)
 
 Examples
   ./prepare_data.sh rog_dialog
+  ./prepare_data.sh --yes rog_dialog
   ./prepare_data.sh rog_art my_experiment_gold
   ./prepare_data.sh ccpcl
   ./prepare_data.sh ccpcl my_ccpcl_gold
-  ./prepare_data.sh all
+  ./prepare_data.sh --yes all
 
 EOF
 
@@ -119,6 +123,23 @@ EOF
     done < <(discover_dataset_aliases)
     echo
 }
+
+PARSED_ARGS=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -y|--yes|--batch|--non-interactive)
+            DIABENCH_PREPARE_NONINTERACTIVE=1
+            shift
+            ;;
+        *)
+            PARSED_ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+set -- "${PARSED_ARGS[@]}"
+
+export DIABENCH_PREPARE_NONINTERACTIVE
 
 if [[ $# -eq 0 ]]; then
     usage_long

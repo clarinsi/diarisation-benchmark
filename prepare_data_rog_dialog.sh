@@ -79,13 +79,21 @@ echo "=== 6. Generating gold RTTM ==="
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # May be multiple words, e.g. "uv run --group trim python" — do not quote when invoking.
 : "${DIABENCH_PYTHON:=python3}"
-# merge_threshold / min_duration / prioritize_pog: omitted → defaults in gold_rttm_from_annotations
-read -rp "Enable silence trimming (requires numpy + praat-parselmouth; uv: docs/data_preparation.md)? [Y/n]: " TRIM_ANS
-TRIM_FLAGS=()
-case "${TRIM_ANS:-Y}" in
-    [Nn]*|[Nn]) ;;
-    *) TRIM_FLAGS=(--enable_trimming) ;;
+case "${DIABENCH_PREPARE_NONINTERACTIVE:-0}" in
+    1|true|TRUE|yes|YES) NONINTERACTIVE=1 ;;
+    *) NONINTERACTIVE=0 ;;
 esac
+# merge_threshold / min_duration / prioritize_pog: omitted → defaults in gold_rttm_from_annotations
+TRIM_FLAGS=()
+if [ "$NONINTERACTIVE" -eq 1 ]; then
+    TRIM_FLAGS=(--enable_trimming)
+else
+    read -rp "Enable silence trimming (requires numpy + praat-parselmouth; uv: docs/data_preparation.md)? [Y/n]: " TRIM_ANS
+    case "${TRIM_ANS:-Y}" in
+        [Nn]*|[Nn]) ;;
+        *) TRIM_FLAGS=(--enable_trimming) ;;
+    esac
+fi
 # shellcheck disable=SC2086
 $DIABENCH_PYTHON "$SCRIPT_DIR/rog_dialog_data_process.py" "${TRIM_FLAGS[@]}" --output_filename "$OUTPUT_FILENAME"
 

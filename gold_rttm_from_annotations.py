@@ -6,6 +6,7 @@ Optional audio-informed silence trimming via trim_gold_silences_rttm (lazy impor
 from __future__ import annotations
 
 import json
+import os
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import asdict
@@ -24,6 +25,25 @@ class TrsRttmParseResult(NamedTuple):
 DEFAULT_MERGE_THRESHOLD = 1.0
 DEFAULT_MIN_DURATION = 0.1
 DEFAULT_PRIORITIZE_POG = False
+
+
+_REPO_ROOT = Path(__file__).resolve().parent
+
+
+def _metadata_rel_path(path: Path | None) -> str | None:
+    """
+    Format a path for provenance metadata.
+
+    If the resolved path is within this repository, return a repo-relative POSIX path
+    (e.g. `data/ROG-Dialog/audio`). Otherwise, fall back to the resolved absolute path.
+    """
+    if path is None:
+        return None
+    resolved = Path(path).resolve()
+    try:
+        return resolved.relative_to(_REPO_ROOT).as_posix()
+    except ValueError:
+        return resolved.as_posix()
 
 
 def format_gold_rttm_header(
@@ -176,6 +196,14 @@ def _try_load_trimmer() -> tuple[dict[str, Any] | None, str | None]:
     return bundle, None
 
 
+def _prepare_noninteractive() -> bool:
+    return os.environ.get("DIABENCH_PREPARE_NONINTERACTIVE", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+
+
 def merge_segments_linear(segments: list[dict], gap_threshold: float) -> list[dict]:
     """Merge adjacent segments of the same speaker if the gap is <= gap_threshold (seconds)."""
     if not segments:
@@ -311,8 +339,8 @@ def generate_gold_rttm_from_trs(
         min_duration=min_duration,
         prioritize_pog=prioritize_pog,
         output_name=final_name,
-        trs_dir=str(trs_dir.resolve()),
-        audio_dir=str(Path(audio_dir).resolve()) if audio_dir and Path(audio_dir).is_dir() else None,
+        trs_dir=_metadata_rel_path(trs_dir),
+        audio_dir=_metadata_rel_path(audio_dir) if audio_dir and Path(audio_dir).is_dir() else None,
     )
 
     total_segments = 0
@@ -363,6 +391,8 @@ def generate_gold_rttm_from_trs(
         bundle, err = _try_load_trimmer()
         if bundle is None:
             print(err)
+            if _prepare_noninteractive():
+                raise SystemExit(1)
             return
         audio_path = Path(audio_dir) if audio_dir is not None else None
         if audio_path is None or not audio_path.is_dir():
@@ -370,6 +400,8 @@ def generate_gold_rttm_from_trs(
                 "Silence trimming skipped: audio_dir is missing or not a directory "
                 "(pass dataset audio_dir when using enable_trimming)."
             )
+            if _prepare_noninteractive():
+                raise SystemExit(1)
             return
 
         trim_params = bundle["default_trim_params"]
@@ -388,8 +420,8 @@ def generate_gold_rttm_from_trs(
             min_duration=min_duration,
             prioritize_pog=prioritize_pog,
             output_name=trimmed_name,
-            trs_dir=str(trs_dir.resolve()),
-            audio_dir=str(audio_path.resolve()),
+            trs_dir=_metadata_rel_path(trs_dir),
+            audio_dir=_metadata_rel_path(audio_path),
         )
         trim_line = format_trim_provenance_line(trim_params)
 
@@ -522,8 +554,8 @@ def generate_gold_rttm_from_cha(
         min_duration=min_duration,
         prioritize_pog="N/A",
         output_name=final_name,
-        cha_dir=str(cha_dir.resolve()),
-        audio_dir=str(audio_dir.resolve()),
+        cha_dir=_metadata_rel_path(cha_dir),
+        audio_dir=_metadata_rel_path(audio_dir),
     )
 
     segments_by_file: dict[str, list[dict]] = {}
@@ -566,9 +598,13 @@ def generate_gold_rttm_from_cha(
         bundle, err = _try_load_trimmer()
         if bundle is None:
             print(err)
+            if _prepare_noninteractive():
+                raise SystemExit(1)
             return
         if not audio_dir.is_dir():
             print("Silence trimming skipped: audio_dir is not a directory.")
+            if _prepare_noninteractive():
+                raise SystemExit(1)
             return
 
         trim_params = bundle["default_trim_params"]
@@ -587,8 +623,8 @@ def generate_gold_rttm_from_cha(
             min_duration=min_duration,
             prioritize_pog="N/A",
             output_name=trimmed_name,
-            cha_dir=str(cha_dir.resolve()),
-            audio_dir=str(audio_dir.resolve()),
+            cha_dir=_metadata_rel_path(cha_dir),
+            audio_dir=_metadata_rel_path(audio_dir),
         )
         trim_line = format_trim_provenance_line(trim_params)
 

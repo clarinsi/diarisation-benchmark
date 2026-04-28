@@ -9,6 +9,10 @@ DEST_DIR="data/$DATASET_NAME"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # May be multiple words, e.g. "uv run --group trim python" — do not quote when invoking.
 : "${DIABENCH_PYTHON:=python3}"
+case "${DIABENCH_PREPARE_NONINTERACTIVE:-0}" in
+    1|true|TRUE|yes|YES) NONINTERACTIVE=1 ;;
+    *) NONINTERACTIVE=0 ;;
+esac
 
 # Benchmark sample (20 sessions). Replication requires these exact WAV stems.
 EXPECTED_WAV_STEMS=(
@@ -142,6 +146,10 @@ if [ "$wav_count" -gt 0 ]; then
         fi
         echo
 
+        if [ "$NONINTERACTIVE" -eq 1 ]; then
+            echo "Non-interactive mode: stopping because WAV stems do not match the benchmark sample."
+            exit 1
+        fi
         read -rp "Continue and generate gold RTTM anyway? [y/N]: " answer
         case "$answer" in
             [Yy]*)
@@ -153,15 +161,17 @@ if [ "$wav_count" -gt 0 ]; then
         esac
     else
         echo "=== WAV set matches benchmark sample (N=${expected_n}) ==="
-        read -rp "Generate gold RTTM from CCPCL transcripts now? [y/N]: " answer
-        case "$answer" in
-            [Yy]*)
-                ;;
-            *)
-                echo "Skipped gold RTTM generation. Rerun when ready."
-                exit 0
-                ;;
-        esac
+        if [ "$NONINTERACTIVE" -ne 1 ]; then
+            read -rp "Generate gold RTTM from CCPCL transcripts now? [y/N]: " answer
+            case "$answer" in
+                [Yy]*)
+                    ;;
+                *)
+                    echo "Skipped gold RTTM generation. Rerun when ready."
+                    exit 0
+                    ;;
+            esac
+        fi
     fi
 
     echo "Running ccpcl_data_process.py (output: $OUTPUT_PATH) ..."
@@ -170,12 +180,16 @@ if [ "$wav_count" -gt 0 ]; then
         CHA_DIR="$RAW_DIR/CCPCL/CCPCL"
     fi
     # merge_threshold / min_duration: omitted → argparse defaults from gold_rttm_from_annotations
-    read -rp "Enable silence trimming (requires numpy + praat-parselmouth; uv: docs/data_preparation.md)? [Y/n]: " TRIM_ANS
     TRIM_FLAGS=()
-    case "${TRIM_ANS:-Y}" in
-        [Nn]*|[Nn]) ;;
-        *) TRIM_FLAGS=(--enable_trimming) ;;
-    esac
+    if [ "$NONINTERACTIVE" -eq 1 ]; then
+        TRIM_FLAGS=(--enable_trimming)
+    else
+        read -rp "Enable silence trimming (requires numpy + praat-parselmouth; uv: docs/data_preparation.md)? [Y/n]: " TRIM_ANS
+        case "${TRIM_ANS:-Y}" in
+            [Nn]*|[Nn]) ;;
+            *) TRIM_FLAGS=(--enable_trimming) ;;
+        esac
+    fi
     # shellcheck disable=SC2086
     $DIABENCH_PYTHON "$SCRIPT_DIR/ccpcl_data_process.py" "${TRIM_FLAGS[@]}" \
         --cha_dir "$CHA_DIR" \
@@ -191,6 +205,7 @@ and place them in:
 Then rerun:
   ./prepare_data_ccpcl.sh [optional_gold_basename]
 EOF
+    exit 1
 fi
 
 echo "=== Script finished: CHILDES-CCPCL step completed ==="
